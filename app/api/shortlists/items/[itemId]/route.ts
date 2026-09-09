@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createSupabaseClientForUser } from '../../../../lib/supabaseUserClient'
+import { createSupabaseClientForUser } from '../../../../../lib/supabaseUserClient'
 
 async function getTokenFromReq(req: Request) {
   const auth = req.headers.get('authorization') || ''

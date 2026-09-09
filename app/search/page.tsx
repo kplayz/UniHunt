@@ -1,3 +1,5 @@
+"use client"
+
 import React, { useEffect, useState } from 'react'
 import ResultsTable from '../../components/ResultsTable'
 
@@ -26,9 +28,13 @@ export default function SearchPage() {
         const json = await res.json()
         setResults(json.top || [])
         setTotal((json.top || []).length)
-        const uniqCountries = Array.from(new Set((json.top || []).map((r: any) => r.country).filter(Boolean)))
+        const uniqCountries: string[] = Array.from(
+          new Set((json.top || []).map((r: any) => r.country).filter((value: unknown): value is string => Boolean(value)))
+        )
         setCountries(uniqCountries)
-        const uniqLevels = Array.from(new Set((json.top || []).map((r: any) => r.course_level).filter(Boolean)))
+        const uniqLevels: string[] = Array.from(
+          new Set((json.top || []).map((r: any) => r.course_level).filter((value: unknown): value is string => Boolean(value)))
+        )
         setLevels(uniqLevels)
       } else {
         const params = new URLSearchParams()
@@ -45,9 +51,13 @@ export default function SearchPage() {
         const json = await res.json()
         setResults(json.data || [])
         setTotal(json.count || 0)
-        const uniqCountries = Array.from(new Set((json.data || []).map((r: any) => r.country).filter(Boolean)))
+        const uniqCountries: string[] = Array.from(
+          new Set((json.data || []).map((r: any) => r.country).filter((value: unknown): value is string => Boolean(value)))
+        )
         setCountries(uniqCountries)
-        const uniqLevels = Array.from(new Set((json.data || []).map((r: any) => r.course_level).filter(Boolean)))
+        const uniqLevels: string[] = Array.from(
+          new Set((json.data || []).map((r: any) => r.course_level).filter((value: unknown): value is string => Boolean(value)))
+        )
         setLevels(uniqLevels)
       }
     } catch (err) {

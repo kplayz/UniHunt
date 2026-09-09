@@ -1,3 +1,5 @@
+"use client"
+
 import React, { useState, useEffect } from 'react'
 import { useShortlists } from '../../src/hooks/useShortlists'
 import ShortlistModal from '../../components/ShortlistModal'
@@ -59,7 +61,7 @@ export default function ShortlistsPage() {
             <li key={s.id} className="flex items-center justify-between rounded border p-3">
               <div>
                 <div className="font-medium">{s.name}</div>
-                <div className="text-sm text-gray-600">Created: {new Date(s.created_at).toLocaleString()}</div>
+                <div className="text-sm text-gray-600">Created: {s.created_at ? new Date(s.created_at).toLocaleString() : 'Unknown'}</div>
               </div>
               <div className="flex gap-2">
                 <button onClick={() => openShortlist(s)} className="rounded bg-gray-100 px-3 py-1 text-sm">Open</button>

@@ -1,3 +1,5 @@
+'use client'
+
 import React from 'react'
 
 type Toast = { id: number; message: string; type?: 'info' | 'success' | 'error' }
