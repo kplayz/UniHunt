@@ -1,6 +1,5 @@
-
 ---
-title: University Course Finder
+title: UniHunt
 emoji: 🎓
 colorFrom: blue
 colorTo: indigo
@@ -8,6 +7,7 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
+short_description: Web app to search for courses and universities across world
 ---
 
 # University Course Finder
@@ -285,3 +285,4 @@ Dockerfile            # HF Spaces / local Docker
 ## License
 
 MIT
+
