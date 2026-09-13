@@ -73,10 +73,12 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Supabase Auth URL config for local:
+Supabase Auth URL config:
 
-- Site URL: `http://localhost:3000`
-- Redirect URL: `http://localhost:3000/auth/callback`
+- Site URL (production): `https://ashnhash-unihunt.hf.space`
+- Redirect URLs (need wildcards — `?next=` is part of the callback):
+  - `http://localhost:3000/**`
+  - `https://ashnhash-unihunt.hf.space/**`
 
 OAuth apps use the **Supabase** callback, not the Next.js one:
 
@@ -94,9 +96,8 @@ Spaces builds this repo with the `Dockerfile` and serves the Next.js standalone
 server on port **7860**. The YAML block at the top of this file (`sdk: docker`,
 `app_port: 7860`) is what the platform reads — do not remove it.
 
-Replace `<hf-user>` and `<space-name>` everywhere below. Example: if your
-Hugging Face username is `ashnhash` and the Space is `university-course-finder`,
-the app URL is `https://ashnhash-university-course-finder.hf.space`.
+This repo is already wired to **[ashnhash/UniHunt](https://huggingface.co/spaces/ashnhash/UniHunt)**.
+The live app URL is **https://ashnhash-unihunt.hf.space**.
 
 ### 0. Prerequisites
 
@@ -132,136 +133,163 @@ Do not paste a custom Dockerfile in the website form. This repo already has one.
 
 ### 2. Put the code on the Space
 
-Pick **one** of the two methods.
+This is **already done** for UniHunt (`git remote space` → `main` at
+`cbb11bf` and earlier). You only need this section again when you change code.
 
-#### Option A — Git remote (recommended for this repo)
+Confirm the remote, then push any new commits:
 
-From the project root (PowerShell or bash):
-
-```bash
-git remote add space https://huggingface.co/spaces/<hf-user>/<space-name>
+```powershell
+cd C:\Users\User\Projects\university-course-finder
+git remote -v
+# should show:  space  https://huggingface.co/spaces/ashnhash/UniHunt
 git push space HEAD:main
 ```
 
-If the Space was created with a README already, the first push may be rejected.
-Pull with allow-unrelated-histories, or force-push only if you are sure the
-Space has nothing you need:
+If Git asks for a password, use a Hugging Face **Write** token from
+[huggingface.co/settings/tokens](https://huggingface.co/settings/tokens), not
+your account password.
 
-```bash
-git pull space main --allow-unrelated-histories
-# resolve the README if Git asks, then:
-git push space HEAD:main
-```
+After the push, open [the Space](https://huggingface.co/spaces/ashnhash/UniHunt).
+The status pill at the top (Building / Running / Error) and the **Logs** tab
+show Docker output. You do **not** need to click anything for a code push —
+Spaces starts a new build by itself.
 
-The Space remote uses your HF username and a token as the password when Git
-prompts. After a successful push, the Space page shows a building log.
+### 3. Add Variables and Secrets
 
-#### Option B — Connect GitHub
+Open **[Space Settings](https://huggingface.co/spaces/ashnhash/UniHunt/settings)**
+while logged in as `ashnhash`.
 
-1. Push this project to a GitHub repository
-2. On the Space: **Settings → Storage and repository → Linked GitHub repository**
-3. Select the repo and the branch (`main`)
-4. Save. Hugging Face clones that branch and builds on every push to it
+Scroll until you see **Variables and secrets** (sometimes titled
+**Repository secrets** / **App secrets**). There are two add buttons:
 
-Use A **or** B, not both, or you will fight two sources of truth.
+- **New variable** — visible in the UI, passed into `docker build` as `ARG`
+- **New secret** — hidden, available to the running container only
 
-### 3. Add Variables and Secrets **before** the first successful build
+`NEXT_PUBLIC_*` is compiled into the browser bundle during `docker build`.
+If you save those as Secrets, the image builds with empty Supabase URLs and
+login will fail.
 
-Open the Space → **Settings → Variables and secrets**.
-
-`NEXT_PUBLIC_*` is compiled into the client bundle during `docker build`. On
-Spaces, only **Variables** are passed as Docker `ARG`s. If you store them as
-Secrets, the image builds with empty Supabase URLs and login will fail.
-
-**Variables** (visible in the UI, available at build and runtime):
+Click **New variable** for each of these (names must match exactly):
 
 | Name | Value |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://qnzkuskdkyqyeglvacqx.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | publishable key from Supabase → Project Settings → API |
-| `HF_MODEL` | `Qwen/Qwen2.5-72B-Instruct` (optional; omit to use the default) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | publishable key from [Supabase API settings](https://supabase.com/dashboard/project/qnzkuskdkyqyeglvacqx/settings/api) |
+| `HF_MODEL` | `Qwen/Qwen2.5-72B-Instruct` (optional) |
 
-**Secrets** (hidden, injected only at **runtime**):
+Click **New secret** for:
 
 | Name | Value |
 | --- | --- |
 | `HUGGINGFACE_API_KEY` | `hf_…` token with Inference access |
 
-Do **not** add Google or Azure client secrets here. Those stay in the Supabase
-provider forms.
+Do **not** add Google or Azure client secrets here.
 
-After saving Variables, open the Space **Logs** tab and click **Factory reboot**
-(or **Rebuild**) so Docker runs again with the new build-args. A plain
-**Restart** reuses the old image and will not pick up `NEXT_PUBLIC_*` changes.
+### 3b. Rebuild after changing Variables (there is no “Factory reboot” on Logs)
+
+The button is **not** on the Logs tab. Hugging Face has renamed it several
+times. Look on **Settings**, in the **Danger zone** / **Runtime** block near
+the bottom of
+[https://huggingface.co/spaces/ashnhash/UniHunt/settings](https://huggingface.co/spaces/ashnhash/UniHunt/settings).
+
+You want the control that **rebuilds the Docker image**, not the one that only
+restarts the existing container. Current labels you may see:
+
+| Label | What it does | Use when |
+| --- | --- | --- |
+| **Factory rebuild** / **Factory reset** / **Factory reboot** | Deletes the old image and runs `docker build` again | You changed a **Variable** (`NEXT_PUBLIC_*`) |
+| **Restart this Space** | Starts the **same** image again | You only changed a **Secret** (`HUGGINGFACE_API_KEY`) |
+| **Pause** | Stops the Space (saves CPU) | You are done for the day |
+
+A **Restart** will not pick up new `NEXT_PUBLIC_*` values.
+
+If you cannot see Factory rebuild:
+
+1. Confirm you are the Space **owner** (`ashnhash`) and not viewing as a guest
+2. Scroll past Hardware, Sleep time, and Variables — the rebuild control is
+   usually under **Danger Zone**
+3. Skip the button entirely: make any tiny commit and `git push space HEAD:main`.
+   A new commit always triggers a full Docker rebuild
+4. Or from a terminal (after `huggingface-cli login`):
+
+   ```powershell
+   hf spaces restart ashnhash/UniHunt --factory-reboot
+   ```
+
+   Older CLI: `huggingface-cli` does not always have this flag; the `hf` CLI does.
+
+Then open **Logs** (top of the Space page, next to App / Files / Community).
+You should see a new `===== Build Queued` line and `npm run build`.
 
 ### 4. Confirm the build
 
-1. **Logs** should show `npm ci`, `npm run build`, then `node server.js`
-2. Status becomes **Running**
-3. Open `https://<hf-user>-<space-name>.hf.space` — you should see the login page
+1. Status pill becomes **Running** (green)
+2. Open https://ashnhash-unihunt.hf.space — you should see the login page
+3. In Logs, a healthy boot ends with something like `Ready` / `Listening` /
+   `node server.js` (Next standalone)
 
 If the build fails:
 
 | Symptom | Likely cause |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` empty / Supabase client error at build | Variables missing, or stored as Secrets instead of Variables |
-| Permission denied / cannot write | Dockerfile user is not UID 1000 (already fixed in this repo) |
-| `npm run build` TypeScript errors | Push a commit that `npm run build`s locally first |
-| App runs but search says API key not configured | `HUGGINGFACE_API_KEY` Secret missing; **Restart** is enough for Secrets |
-| 401 on `/search` after login | Space URL not in Supabase redirect allow-list (next step) |
+| `NEXT_PUBLIC_SUPABASE_URL` empty / Supabase client error | Variables missing, or stored as Secrets |
+| `adduser: uid '1000' in use` | Fixed in `cbb11bf` — Spaces should be past this |
+| `npm run build` TypeScript errors | Push a commit that builds locally first |
+| App runs but search says API key not configured | Add the Secret, then **Restart** (not Factory rebuild) |
+| 401 on `/search` after login | Space URL missing from Supabase redirects (step 5) |
+| Lands on `https://0.0.0.0:7860/search` after Google | Space is still on a build that used the container bind address. Push the auth callback fix and wait for **Running**. |
 
 ### 5. Point Supabase Auth at the Space
 
 1. Open [URL Configuration](https://supabase.com/dashboard/project/qnzkuskdkyqyeglvacqx/auth/url-configuration)
-2. Keep `http://localhost:3000` if you still develop locally
-3. **Additional Redirect URLs** — add:
+2. Set **Site URL** to `https://ashnhash-unihunt.hf.space`
+   (this is the fallback when a `redirectTo` is rejected — if it stays
+   `http://localhost:3000`, Space logins bounce back to localhost)
+3. Under **Redirect URLs** add both wildcards (exact `/auth/callback` is not
+   enough, because the app sends `?next=/search`):
 
-   `https://<hf-user>-<space-name>.hf.space/auth/callback`
+   `http://localhost:3000/**`
 
-4. When the Space is the real front door, set **Site URL** to:
+   `https://ashnhash-unihunt.hf.space/**`
 
-   `https://<hf-user>-<space-name>.hf.space`
+4. Save. Local `npm run dev` still works; Google/Microsoft logins from the
+   Space stay on the Space.
 
-OAuth providers still redirect to Supabase first, not to the Space:
+OAuth still uses the **Supabase** callback (already on the Google/Azure apps):
 
 ```
 https://qnzkuskdkyqyeglvacqx.supabase.co/auth/v1/callback
 ```
 
-That URI should already be on the Google and Azure apps from local setup.
-
 ### 6. Allow the Space origin on Google (and Azure if needed)
 
 **Google Cloud → APIs & Services → Credentials → your Web client**
 
-- Authorized JavaScript origins: add `https://<hf-user>-<space-name>.hf.space`
-- Authorized redirect URIs: leave the Supabase callback (do not add the Space `/auth/callback` here)
+- Authorized JavaScript origins: add `https://ashnhash-unihunt.hf.space`
+- Authorized redirect URIs: keep only the Supabase callback above
 
 **Azure Entra → App registration → Authentication**
 
 - Web redirect URIs: same Supabase callback only
-- No extra Space URL is required on Azure unless you added a different reply URL yourself
 
 ### 7. Smoke-test the live app
 
-1. Open `https://<hf-user>-<space-name>.hf.space`
+1. Open https://ashnhash-unihunt.hf.space
 2. Sign in with email, or Google / Microsoft
-3. You should land on `/search` (last session restored if you already searched)
-4. Run a search — this proves `HUGGINGFACE_API_KEY` at runtime
-5. Shortlist a course and open `/shortlist` — this proves Supabase + cookies on the Space host
+3. You should land on `/search`
+4. Run a search — proves `HUGGINGFACE_API_KEY`
+5. Shortlist a course and open `/shortlist` — proves Supabase cookies on the Space host
 
 ### 8. Later updates
 
-```bash
+```powershell
 git push space HEAD:main
 ```
 
-Or push to the linked GitHub branch if you used Option B.
-
-- Code-only change → Spaces rebuilds automatically
-- `NEXT_PUBLIC_*` Variable change → **Factory reboot**
-- `HUGGINGFACE_API_KEY` Secret change → **Restart** is enough
-- Space URL change (rename) → update Supabase redirect URLs and Google origins again
+- Code-only change → Spaces rebuilds automatically (no button)
+- `NEXT_PUBLIC_*` Variable change → **Factory rebuild** on Settings, or push any new commit
+- `HUGGINGFACE_API_KEY` Secret change → **Restart this Space**
+- Space rename → update the Supabase redirect and the Google JS origin again
 
 ## Project Structure
 
