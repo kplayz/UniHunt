@@ -24,9 +24,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 FROM base AS runner
-# HF Spaces requires UID 1000. Creating this user before COPY avoids permission errors.
-RUN adduser -D -u 1000 user
-ENV HOME=/home/user
+# node:20-alpine already has UID 1000 as `node`. Creating another user
+# with that UID fails on Hugging Face Spaces (`adduser: uid '1000' in use`).
+ENV HOME=/home/node
 WORKDIR $HOME/app
 
 ENV NODE_ENV=production
@@ -34,11 +34,11 @@ ENV PORT=7860
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 
-COPY --from=builder --chown=user:user /app/public ./public
-COPY --from=builder --chown=user:user /app/.next/standalone ./
-COPY --from=builder --chown=user:user /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
 
-USER user
+USER node
 
 EXPOSE 7860
 
