@@ -1,6 +1,7 @@
 # Hugging Face Spaces (Docker SDK). The platform runs the container as UID 1000.
 # NEXT_PUBLIC_* values are inlined at `next build`, so they must be Space
-# Variables (build-time ARGs). HUGGINGFACE_API_KEY is runtime-only — never ARG it.
+# Variables (build-time ARGs). HUGGINGFACE_API_KEY and BRAVE_SEARCH_API_KEY
+# are runtime-only — never ARG them.
 FROM node:20-alpine AS base
 RUN apk add --no-cache libc6-compat
 

@@ -1,7 +1,7 @@
 /**
- * Course URLs originate from model output and from manual user entry, and are
- * rendered straight into an anchor `href`. Restricting them to http(s) keeps
- * `javascript:` and `data:` URLs from becoming a click-to-execute vector.
+ * Course URLs originate from Brave Search, model output, and manual user entry,
+ * and are rendered straight into an anchor `href`. Restricting them to http(s)
+ * keeps `javascript:` and `data:` URLs from becoming a click-to-execute vector.
  */
 export function isHttpUrl(value: string): boolean {
   try {

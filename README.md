@@ -35,7 +35,7 @@ All build and backend steps below are **done**. Remaining work is only what you 
 
 - **Smart search criteria**: course level, type, specialization, multi-country selection, candidate type (in-state / out-of-state / out-of-country)
 - **Candidate profile**: last qualification, school, curriculum, subjects, grades/GPA, budget
-- **AI search**: uses Hugging Face Inference API to recommend matching universities and courses
+- **AI search**: Brave Search finds live official course pages, then Hugging Face structures matching recommendations with verified URLs
 - **Sortable & filterable results**: QS World Ranking (default sort), tuition, location, admission requirements, http(s) URLs
 - **Shortlist**: save from search or add manually — per user in Supabase, with notes plus duration, language, intake, scholarships
 - **Authentication**: email/password, Google, Microsoft via Supabase Auth
@@ -46,6 +46,7 @@ All build and backend steps below are **done**. Remaining work is only what you 
 - Tailwind CSS 4 + shadcn/ui
 - Supabase (Auth + PostgreSQL)
 - Hugging Face Inference API
+- Brave Search API (verified course page URLs)
 
 ## Environment variables
 
@@ -54,9 +55,10 @@ All build and backend steps below are **done**. Remaining work is only what you 
 | `NEXT_PUBLIC_SUPABASE_URL` | Browser + server | `.env.local` | **Variable** (needed at Docker **build**) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Browser + server | `.env.local` | **Variable** (needed at Docker **build**) |
 | `HUGGINGFACE_API_KEY` | Server only (`/api/search`) | `.env.local` | **Secret** (runtime only) |
+| `BRAVE_SEARCH_API_KEY` | Server only (`/api/search`) | `.env.local` | **Secret** (runtime only) |
 | `HF_MODEL` | Server only, optional | `.env.local` | **Variable** or **Secret**, optional |
 
-`NEXT_PUBLIC_*` is inlined into the JS bundle at `next build`. On Spaces, Variables are passed as Docker `ARG`s — that is why they must be Variables, not Secrets. `HUGGINGFACE_API_KEY` must stay a Secret so it is not baked into the image.
+`NEXT_PUBLIC_*` is inlined into the JS bundle at `next build`. On Spaces, Variables are passed as Docker `ARG`s — that is why they must be Variables, not Secrets. `HUGGINGFACE_API_KEY` and `BRAVE_SEARCH_API_KEY` must stay Secrets so they are not baked into the image.
 
 Never put a Supabase `service_role` key, a Google client secret, or an Azure client secret in this repo or in Space Variables. OAuth secrets belong only in the Supabase provider forms.
 
@@ -107,6 +109,7 @@ The live app URL is **https://ashnhash-unihunt.hf.space**.
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (publishable or anon key — never `service_role`)
   - `HUGGINGFACE_API_KEY` (token from [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) with Inference permission)
+  - `BRAVE_SEARCH_API_KEY` (key from [Brave Search API](https://api-dashboard.search.brave.com/app/documentation/web-search/get-started) with Web Search access)
 - Git, plus either:
   - the [Hugging Face CLI](https://huggingface.co/docs/huggingface_hub/guides/cli) (`pip install huggingface_hub`), or
   - a connected GitHub repo (Spaces can pull from GitHub)
@@ -182,6 +185,7 @@ Click **New secret** for:
 | Name | Value |
 | --- | --- |
 | `HUGGINGFACE_API_KEY` | `hf_…` token with Inference access |
+| `BRAVE_SEARCH_API_KEY` | Brave Search API key with Web Search access |
 
 Do **not** add Google or Azure client secrets here.
 
@@ -198,7 +202,7 @@ restarts the existing container. Current labels you may see:
 | Label | What it does | Use when |
 | --- | --- | --- |
 | **Factory rebuild** / **Factory reset** / **Factory reboot** | Deletes the old image and runs `docker build` again | You changed a **Variable** (`NEXT_PUBLIC_*`) |
-| **Restart this Space** | Starts the **same** image again | You only changed a **Secret** (`HUGGINGFACE_API_KEY`) |
+| **Restart this Space** | Starts the **same** image again | You only changed a **Secret** (`HUGGINGFACE_API_KEY`, `BRAVE_SEARCH_API_KEY`) |
 | **Pause** | Stops the Space (saves CPU) | You are done for the day |
 
 A **Restart** will not pick up new `NEXT_PUBLIC_*` values.
@@ -235,7 +239,7 @@ If the build fails:
 | `NEXT_PUBLIC_SUPABASE_URL` empty / Supabase client error | Variables missing, or stored as Secrets |
 | `adduser: uid '1000' in use` | Fixed in `cbb11bf` — Spaces should be past this |
 | `npm run build` TypeScript errors | Push a commit that builds locally first |
-| App runs but search says API key not configured | Add the Secret, then **Restart** (not Factory rebuild) |
+| App runs but search says API key not configured | Add `HUGGINGFACE_API_KEY` and `BRAVE_SEARCH_API_KEY`, then **Restart** (not Factory rebuild) |
 | 401 on `/search` after login | Space URL missing from Supabase redirects (step 5) |
 | Lands on `https://0.0.0.0:7860/search` after Google | Space is still on a build that used the container bind address. Push the auth callback fix and wait for **Running**. |
 
@@ -277,7 +281,7 @@ https://qnzkuskdkyqyeglvacqx.supabase.co/auth/v1/callback
 1. Open https://ashnhash-unihunt.hf.space
 2. Sign in with email, or Google / Microsoft
 3. You should land on `/search`
-4. Run a search — proves `HUGGINGFACE_API_KEY`
+4. Run a search — proves `HUGGINGFACE_API_KEY` and `BRAVE_SEARCH_API_KEY`
 5. Shortlist a course and open `/shortlist` — proves Supabase cookies on the Space host
 
 ### 8. Later updates
@@ -288,7 +292,7 @@ git push space HEAD:main
 
 - Code-only change → Spaces rebuilds automatically (no button)
 - `NEXT_PUBLIC_*` Variable change → **Factory rebuild** on Settings, or push any new commit
-- `HUGGINGFACE_API_KEY` Secret change → **Restart this Space**
+- `HUGGINGFACE_API_KEY` or `BRAVE_SEARCH_API_KEY` Secret change → **Restart this Space**
 - Space rename → update the Supabase redirect and the Google JS origin again
 
 ## Project Structure
@@ -296,12 +300,14 @@ git push space HEAD:main
 ```
 src/
   app/
-    api/search/       # AI search endpoint
+    api/search/       # Brave-grounded AI search endpoint
     api/shortlist/    # Shortlist CRUD + notes PATCH
     auth/callback/    # OAuth / email code exchange
     login/            # Auth page
     search/           # Search route (restores last session)
     shortlist/        # Saved courses
+  lib/
+    brave.ts          # Brave Search API + official URL matching
   proxy.ts            # Session refresh + route protection
 supabase/schema.sql   # Database setup (safe to re-run)
 Dockerfile            # HF Spaces / local Docker

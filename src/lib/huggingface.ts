@@ -1,14 +1,28 @@
 import { HfInference } from "@huggingface/inference";
-import type { SearchCriteriaInput, UniversityCourseResult } from "./types";
+import type { BraveWebResult } from "./brave";
+import {
+  fillMissingCourseUrls,
+  formatSourcesForPrompt,
+  resolveCourseUrl,
+  searchCourseSources,
+} from "./brave";
 import { compareRanking } from "./ranking";
+import type { SearchCriteriaInput, UniversityCourseResult } from "./types";
 import { safeHttpUrl } from "./url";
 
 const DEFAULT_MODEL = "Qwen/Qwen2.5-72B-Instruct";
 
-function buildSearchPrompt(criteria: SearchCriteriaInput): string {
-  return `You are an expert university admissions counselor with up-to-date knowledge of global higher education.
+function buildSearchPrompt(
+  criteria: SearchCriteriaInput,
+  sources: BraveWebResult[]
+): string {
+  const allowedUrls = sources.map((source) => source.url).join("\n");
 
-Search the web and your knowledge to find real university courses matching these candidate criteria. Return ONLY a valid JSON array (no markdown, no explanation) of 8-15 university course recommendations.
+  return `You are an expert university admissions counselor.
+
+Use ONLY the live Brave Search results below. Do not invent universities, courses, or URLs. If a programme is not clearly supported by a source, omit it.
+
+Return ONLY a valid JSON array (no markdown, no explanation) of 8-15 university course recommendations.
 
 Candidate criteria:
 - Course Level: ${criteria.courseLevel || "Any"}
@@ -36,14 +50,20 @@ Each object in the JSON array MUST have exactly these fields:
   "qsWorldRanking": number or null,
   "tuitionFee": "approximate annual fee with currency for the candidate type",
   "admissionRequirements": "key requirements summary",
-  "courseUrl": "verified official university course page URL",
+  "courseUrl": "MUST be copied EXACTLY from one of the source URLs below",
   "duration": "e.g. 4 years",
   "language": "e.g. English",
   "intakePeriod": "e.g. Fall 2026",
   "scholarshipInfo": "available scholarships or None"
 }
 
-Sort results by QS World Ranking (best/lowest number first). Use real universities with plausible official URLs. If QS ranking is unknown, use null.`;
+Sort results by QS World Ranking (best/lowest number first). If QS ranking is unknown, use null. Prefer official university course/programme pages over ranking portals.
+
+Brave Search sources:
+${formatSourcesForPrompt(sources)}
+
+Allowed courseUrl values (copy exactly, one per course):
+${allowedUrls}`;
 }
 
 function extractJsonArray(text: string): unknown[] {
@@ -60,13 +80,19 @@ function extractJsonArray(text: string): unknown[] {
   return JSON.parse(candidate.slice(start, end + 1)) as unknown[];
 }
 
-function normalizeResult(item: Record<string, unknown>, index: number): UniversityCourseResult {
+function normalizeResult(
+  item: Record<string, unknown>,
+  index: number,
+  sources: BraveWebResult[]
+): UniversityCourseResult {
   const qs = item.qsWorldRanking;
+  const universityName = String(item.universityName ?? "Unknown University");
+  const courseName = String(item.courseName ?? "Unknown Course");
   return {
     id: `result-${index}-${Date.now()}`,
-    universityName: String(item.universityName ?? "Unknown University"),
+    universityName,
     universityLocation: String(item.universityLocation ?? ""),
-    courseName: String(item.courseName ?? "Unknown Course"),
+    courseName,
     courseLevel: String(item.courseLevel ?? ""),
     courseType: String(item.courseType ?? ""),
     specialization: String(item.specialization ?? ""),
@@ -81,7 +107,12 @@ function normalizeResult(item: Record<string, unknown>, index: number): Universi
             : null,
     tuitionFee: String(item.tuitionFee ?? "Contact university"),
     admissionRequirements: String(item.admissionRequirements ?? ""),
-    courseUrl: safeHttpUrl(item.courseUrl),
+    courseUrl: resolveCourseUrl(
+      universityName,
+      courseName,
+      safeHttpUrl(item.courseUrl),
+      sources
+    ),
     duration: String(item.duration ?? ""),
     language: String(item.language ?? ""),
     intakePeriod: String(item.intakePeriod ?? ""),
@@ -97,6 +128,13 @@ export async function searchUniversityCourses(
     throw new Error("HUGGINGFACE_API_KEY is not configured.");
   }
 
+  const sources = await searchCourseSources(criteria);
+  if (sources.length === 0) {
+    throw new Error(
+      "Brave Search returned no university course pages. Try different criteria."
+    );
+  }
+
   const model = process.env.HF_MODEL ?? DEFAULT_MODEL;
   const hf = new HfInference(apiKey);
 
@@ -105,11 +143,11 @@ export async function searchUniversityCourses(
     messages: [
       {
         role: "user",
-        content: buildSearchPrompt(criteria),
+        content: buildSearchPrompt(criteria, sources),
       },
     ],
     max_tokens: 4096,
-    temperature: 0.3,
+    temperature: 0.2,
   });
 
   const content = response.choices[0]?.message?.content;
@@ -118,9 +156,12 @@ export async function searchUniversityCourses(
   }
 
   const raw = extractJsonArray(content);
-  const results = raw.map((item, index) =>
-    normalizeResult(item as Record<string, unknown>, index)
+  const extracted = raw.map((item, index) =>
+    normalizeResult(item as Record<string, unknown>, index, sources)
   );
+  const withUrls = await fillMissingCourseUrls(extracted);
+  const verified = withUrls.filter((result) => result.courseUrl);
+  const results = verified.length >= 5 ? verified : withUrls;
 
   return results.sort((a, b) => compareRanking(a.qsWorldRanking, b.qsWorldRanking));
 }

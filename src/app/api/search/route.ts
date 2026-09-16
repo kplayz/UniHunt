@@ -4,6 +4,8 @@ import { searchUniversityCourses } from "@/lib/huggingface";
 import type { Json } from "@/lib/supabase/database.types";
 import { createClient } from "@/lib/supabase/server";
 
+export const maxDuration = 120;
+
 const searchSchema = z.object({
   courseLevel: z.string(),
   courseType: z.string(),

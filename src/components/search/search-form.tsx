@@ -54,8 +54,8 @@ export function SearchForm({
           Course Search Criteria
         </CardTitle>
         <CardDescription>
-          Fill in your preferences and candidate details. AI will search for matching
-          universities and courses.
+          Fill in your preferences and candidate details. AI will search the live web
+          for matching universities and official course pages.
           {restoredAt
             ? ` Last search restored from ${new Date(restoredAt).toLocaleString()}.`
             : null}
@@ -227,7 +227,7 @@ export function SearchForm({
             {loading ? (
               <>
                 <Loader2 className="animate-spin" />
-                Searching with AI...
+                Searching...
               </>
             ) : (
               <>
