@@ -3,9 +3,9 @@ import { isHttpUrl, safeHttpUrl } from "./url";
 
 const BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
 const QUERY_LIMIT = 400;
-const MAX_SOURCE_QUERIES = 3;
-const MAX_SOURCES = 24;
-const MAX_TARGETED_LOOKUPS = 5;
+const MAX_SOURCES = 12;
+const MAX_TARGETED_LOOKUPS = 3;
+const SNIPPET_LIMIT = 180;
 const REQUEST_GAP_MS = 1100;
 const REQUEST_TIMEOUT_MS = 20_000;
 
@@ -228,21 +228,24 @@ function buildSourceQueries(criteria: SearchCriteriaInput): Array<{
   const level = criteria.courseLevel.trim();
   const subject = subjectPhrase(criteria);
   const countries = criteria.countries.filter(Boolean);
-  const targets = countries.length ? countries.slice(0, MAX_SOURCE_QUERIES) : [""];
+  const countryHint = countries.slice(0, 3).join(" ");
 
-  return targets.map((country) => ({
-    query: clipQuery(
-      [
-        level,
-        subject,
-        country,
-        "university official course page tuition admission",
-      ]
-        .filter(Boolean)
-        .join(" ")
-    ),
-    country: country ? BRAVE_COUNTRY_CODES[country] : undefined,
-  }));
+  return [
+    {
+      query: clipQuery(
+        [
+          level,
+          subject,
+          countryHint,
+          "university official course page tuition admission",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      ),
+      country:
+        countries.length === 1 ? BRAVE_COUNTRY_CODES[countries[0]] : undefined,
+    },
+  ];
 }
 
 function parseRateLimitReset(header: string | null): number {
@@ -266,7 +269,7 @@ async function braveWebSearch(
   const params = new URLSearchParams({
     q: query,
     count: "20",
-    extra_snippets: "true",
+    extra_snippets: "false",
     result_filter: "web",
     safesearch: "moderate",
     spellcheck: "true",
@@ -365,13 +368,9 @@ export async function searchCourseSources(
 export function formatSourcesForPrompt(sources: BraveWebResult[]): string {
   return sources
     .map((source, index) => {
-      const snippets = [source.description, ...source.extraSnippets]
-        .filter(Boolean)
-        .slice(0, 3)
-        .join(" ");
+      const snippet = source.description.slice(0, SNIPPET_LIMIT).trim();
       return `[${index + 1}] ${source.title}
-URL: ${source.url}
-${snippets}`;
+URL: ${source.url}${snippet ? `\n${snippet}` : ""}`;
     })
     .join("\n\n");
 }

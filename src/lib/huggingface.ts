@@ -1,4 +1,7 @@
-import { HfInference } from "@huggingface/inference";
+import {
+  InferenceClient,
+  InferenceClientProviderApiError,
+} from "@huggingface/inference";
 import type { BraveWebResult } from "./brave";
 import {
   fillMissingCourseUrls,
@@ -11,18 +14,23 @@ import type { SearchCriteriaInput, UniversityCourseResult } from "./types";
 import { safeHttpUrl } from "./url";
 
 const DEFAULT_MODEL = "Qwen/Qwen2.5-72B-Instruct";
+const FALLBACK_MODELS = [
+  "openai/gpt-oss-20b:fastest",
+  "Qwen/Qwen3-8B:fastest",
+];
+const MAX_OUTPUT_TOKENS = 1800;
+const PRIMARY_TIMEOUT_MS = 40_000;
+const FALLBACK_TIMEOUT_MS = 25_000;
 
 function buildSearchPrompt(
   criteria: SearchCriteriaInput,
   sources: BraveWebResult[]
 ): string {
-  const allowedUrls = sources.map((source) => source.url).join("\n");
-
   return `You are an expert university admissions counselor.
 
 Use ONLY the live Brave Search results below. Do not invent universities, courses, or URLs. If a programme is not clearly supported by a source, omit it.
 
-Return ONLY a valid JSON array (no markdown, no explanation) of 8-15 university course recommendations.
+Return ONLY a valid JSON array (no markdown, no explanation) of 8-10 university course recommendations.
 
 Candidate criteria:
 - Course Level: ${criteria.courseLevel || "Any"}
@@ -50,7 +58,7 @@ Each object in the JSON array MUST have exactly these fields:
   "qsWorldRanking": number or null,
   "tuitionFee": "approximate annual fee with currency for the candidate type",
   "admissionRequirements": "key requirements summary",
-  "courseUrl": "MUST be copied EXACTLY from one of the source URLs below",
+  "courseUrl": "MUST be copied EXACTLY from a source URL below",
   "duration": "e.g. 4 years",
   "language": "e.g. English",
   "intakePeriod": "e.g. Fall 2026",
@@ -60,10 +68,7 @@ Each object in the JSON array MUST have exactly these fields:
 Sort results by QS World Ranking (best/lowest number first). If QS ranking is unknown, use null. Prefer official university course/programme pages over ranking portals.
 
 Brave Search sources:
-${formatSourcesForPrompt(sources)}
-
-Allowed courseUrl values (copy exactly, one per course):
-${allowedUrls}`;
+${formatSourcesForPrompt(sources)}`;
 }
 
 function extractJsonArray(text: string): unknown[] {
@@ -120,6 +125,77 @@ function normalizeResult(
   };
 }
 
+function modelQueue(configured: string): string[] {
+  const primary =
+    configured === DEFAULT_MODEL
+      ? "Qwen/Qwen2.5-72B-Instruct:novita"
+      : configured;
+  return [...new Set([primary, ...FALLBACK_MODELS])];
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
+  );
+}
+
+async function completeWithFallback(
+  hf: InferenceClient,
+  prompt: string,
+  configuredModel: string
+): Promise<string> {
+  const models = modelQueue(configuredModel);
+  let lastError: unknown;
+
+  for (const [index, model] of models.entries()) {
+    const timeoutMs = index === 0 ? PRIMARY_TIMEOUT_MS : FALLBACK_TIMEOUT_MS;
+    try {
+      const response = await hf.chatCompletion(
+        {
+          model,
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: MAX_OUTPUT_TOKENS,
+          temperature: 0.2,
+        },
+        {
+          retry_on_error: false,
+          signal: AbortSignal.timeout(timeoutMs),
+        }
+      );
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error("Empty response from Hugging Face model.");
+      }
+      if (index > 0) {
+        console.warn(`Search used fallback model ${model}`);
+      }
+      return content;
+    } catch (error) {
+      lastError = error;
+      console.error(`Inference failed for ${model}:`, error);
+      const status =
+        error instanceof InferenceClientProviderApiError
+          ? error.httpResponse.status
+          : 0;
+      if (status === 401 || status === 403) {
+        throw new Error(
+          "HUGGINGFACE_API_KEY is invalid or missing Inference Providers permission."
+        );
+      }
+    }
+  }
+
+  if (lastError instanceof InferenceClientProviderApiError || isAbortError(lastError)) {
+    throw new Error(
+      "The language model provider timed out or is temporarily unavailable. Please try again."
+    );
+  }
+  if (lastError instanceof Error) throw lastError;
+  throw new Error("Search failed. Please try again.");
+}
+
 export async function searchUniversityCourses(
   criteria: SearchCriteriaInput
 ): Promise<UniversityCourseResult[]> {
@@ -136,24 +212,12 @@ export async function searchUniversityCourses(
   }
 
   const model = process.env.HF_MODEL ?? DEFAULT_MODEL;
-  const hf = new HfInference(apiKey);
-
-  const response = await hf.chatCompletion({
-    model,
-    messages: [
-      {
-        role: "user",
-        content: buildSearchPrompt(criteria, sources),
-      },
-    ],
-    max_tokens: 4096,
-    temperature: 0.2,
-  });
-
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error("Empty response from Hugging Face model.");
-  }
+  const hf = new InferenceClient(apiKey);
+  const content = await completeWithFallback(
+    hf,
+    buildSearchPrompt(criteria, sources),
+    model
+  );
 
   const raw = extractJsonArray(content);
   const extracted = raw.map((item, index) =>
