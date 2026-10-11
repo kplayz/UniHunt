@@ -3,12 +3,23 @@
 import { useState } from "react";
 import {
   CalendarClock,
+  CalendarPlus,
   CalendarSearch,
+  Download,
   ExternalLink,
   Loader2,
   RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  buildIcs,
+  calendarEventFromDate,
+  downloadIcs,
+  googleCalendarUrl,
+  icsFilename,
+  outlookCalendarUrl,
+  type CalendarEvent,
+} from "@/lib/calendar-links";
 import { importantDateCategoryLabel } from "@/lib/important-dates-format";
 import type {
   ImportantDate,
@@ -26,6 +37,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface ImportantDatesDialogProps {
   course: ShortlistedCourse;
@@ -83,10 +102,84 @@ function daysUntil(iso: string): number {
   return Math.round((target - now) / 86_400_000);
 }
 
-function DateRow({ date }: { date: ImportantDate }) {
+function openInNewTab(url: string) {
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+interface AddToCalendarMenuProps {
+  events: CalendarEvent[];
+  filename: string;
+  label: string;
+  size?: "sm" | "xs";
+  variant?: "outline" | "secondary" | "ghost";
+}
+
+/**
+ * Google and Outlook deep links can only create one event at a time, so for a
+ * single date they are offered directly; for several dates the .ics download
+ * (which both services import) is the only multi-event option.
+ */
+function AddToCalendarMenu({ events, filename, label, size = "sm", variant = "outline" }: AddToCalendarMenuProps) {
+  if (events.length === 0) return null;
+  const single = events.length === 1 ? events[0] : null;
+
+  function handleDownload() {
+    downloadIcs(filename, buildIcs(events));
+    toast.success(
+      events.length === 1
+        ? "Calendar file downloaded — open it to add the event"
+        : `Calendar file with ${events.length} dates downloaded — open it to import them`
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant={variant} size={size} aria-label={label}>
+          <CalendarPlus />
+          {label}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-56">
+        {single ? (
+          <>
+            <DropdownMenuItem onSelect={() => openInNewTab(googleCalendarUrl(single))}>
+              Google Calendar
+              <ExternalLink className="ml-auto size-3 text-muted-foreground" />
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => openInNewTab(outlookCalendarUrl(single, "live"))}>
+              Outlook.com
+              <ExternalLink className="ml-auto size-3 text-muted-foreground" />
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => openInNewTab(outlookCalendarUrl(single, "office"))}>
+              Outlook (work or school)
+              <ExternalLink className="ml-auto size-3 text-muted-foreground" />
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : (
+          <>
+            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+              {events.length} upcoming dates. Download the file, then import it into Google
+              Calendar or Outlook.
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+          </>
+        )}
+        <DropdownMenuItem onSelect={handleDownload}>
+          <Download className="size-4" />
+          {single ? "Download .ics (Outlook desktop, Apple Calendar)" : "Download .ics file"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function DateRow({ date, course }: { date: ImportantDate; course: ShortlistedCourse }) {
   const days = date.date ? daysUntil(date.date) : null;
   const passed = days !== null && days < 0;
   const soon = days !== null && days >= 0 && days <= 30;
+  const event = passed ? null : calendarEventFromDate(date, course);
 
   return (
     <li
@@ -115,17 +208,30 @@ function DateRow({ date }: { date: ImportantDate }) {
       {date.date && date.dateText && formatIsoDate(date.date, "") !== date.dateText && (
         <p className="text-xs text-muted-foreground">As written: “{date.dateText}”</p>
       )}
-      {date.sourceUrl && (
-        <a
-          href={date.sourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-primary hover:underline break-all"
-        >
-          Source
-          <ExternalLink className="size-3" />
-        </a>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {date.sourceUrl ? (
+          <a
+            href={date.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline break-all"
+          >
+            Source
+            <ExternalLink className="size-3" />
+          </a>
+        ) : (
+          <span />
+        )}
+        {event && (
+          <AddToCalendarMenu
+            events={[event]}
+            filename={icsFilename(course)}
+            label="Add to calendar"
+            size="xs"
+            variant="ghost"
+          />
+        )}
+      </div>
     </li>
   );
 }
@@ -135,6 +241,11 @@ export function ImportantDatesDialog({ course, onLookup }: ImportantDatesDialogP
   const [loading, setLoading] = useState(false);
   const report = course.important_dates;
   const next = nextImportantDate(course);
+  const today = todayIso();
+  const upcomingEvents = (report?.dates ?? [])
+    .filter((date) => date.date && date.date >= today)
+    .map((date) => calendarEventFromDate(date, course))
+    .filter((event): event is CalendarEvent => event !== null);
 
   async function handleLookup() {
     setLoading(true);
@@ -208,10 +319,29 @@ export function ImportantDatesDialog({ course, onLookup }: ImportantDatesDialogP
               </p>
             </div>
 
+            {upcomingEvents.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {upcomingEvents.length} upcoming date{upcomingEvents.length === 1 ? "" : "s"}
+                  . Each is added as an all-day event with a reminder one week before.
+                </p>
+                <AddToCalendarMenu
+                  events={upcomingEvents}
+                  filename={icsFilename(course)}
+                  label={upcomingEvents.length === 1 ? "Add to calendar" : "Add all to calendar"}
+                  variant="secondary"
+                />
+              </div>
+            )}
+
             {report.dates.length > 0 && (
               <ul className="space-y-2">
                 {report.dates.map((date, index) => (
-                  <DateRow key={`${date.category}-${date.date ?? date.dateText}-${index}`} date={date} />
+                  <DateRow
+                    key={`${date.category}-${date.date ?? date.dateText}-${index}`}
+                    date={date}
+                    course={course}
+                  />
                 ))}
               </ul>
             )}

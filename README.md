@@ -38,6 +38,7 @@ All build and backend steps below are **done**. Remaining work is only what you 
 - **AI search**: Brave Search finds live official course pages, then Hugging Face structures matching recommendations with verified URLs
 - **Sortable & filterable results**: QS World Ranking (default sort), tuition, location, admission requirements, http(s) URLs
 - **Shortlist**: save from search or add manually — per user in Supabase, with notes plus duration, language, intake, scholarships
+- **Key dates**: search the university's own website for application windows, deadlines, scholarship, exam, result and session-start dates, then add them to Google Calendar or Outlook (one click per date, or download an `.ics` file with all upcoming dates)
 - **Authentication**: email/password, Google, Microsoft via Supabase Auth
 
 ## Tech Stack
