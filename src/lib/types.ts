@@ -72,9 +72,48 @@ export interface UniversityCourseResult {
   scholarshipInfo: string;
 }
 
+export interface CourseSearchOutcome {
+  results: UniversityCourseResult[];
+  warning?: string;
+}
+
+export type ImportantDateCategory =
+  | "application_open"
+  | "application_deadline"
+  | "entrance_exam"
+  | "scholarship"
+  | "offer_or_result"
+  | "fee_payment"
+  | "session_start"
+  | "orientation"
+  | "other";
+
+export interface ImportantDate {
+  label: string;
+  category: ImportantDateCategory;
+  /** ISO calendar date (YYYY-MM-DD) when it could be resolved, else null. */
+  date: string | null;
+  /** The date exactly as the university wrote it, e.g. "15 June 2026". */
+  dateText: string;
+  details: string;
+  sourceUrl: string;
+}
+
+export interface ImportantDatesReport {
+  dates: ImportantDate[];
+  sources: Array<{ title: string; url: string }>;
+  /** Registrable host the search was restricted to, e.g. "bits-pilani.ac.in". */
+  host: string | null;
+  checkedAt: string;
+  summary: string;
+  method: "model" | "heuristic";
+}
+
 export interface ShortlistedCourse {
   id: string;
   user_id: string;
+  important_dates: ImportantDatesReport | null;
+  important_dates_checked_at: string | null;
   university_name: string;
   university_location: string | null;
   course_name: string;

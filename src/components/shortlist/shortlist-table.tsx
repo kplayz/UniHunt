@@ -19,6 +19,10 @@ import { ArrowUpDown, ExternalLink, Trash2 } from "lucide-react";
 import { compareRanking } from "@/lib/ranking";
 import type { ShortlistedCourse } from "@/lib/types";
 import { CourseDetailsDialog } from "@/components/shortlist/course-details-dialog";
+import {
+  ImportantDatesDialog,
+  nextImportantDate,
+} from "@/components/shortlist/important-dates-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -47,18 +51,26 @@ const features = tableFeatures({
   sortedRowModel: createSortedRowModel(),
 });
 
+const WRAP_COLUMN_IDS = new Set([
+  "university_location",
+  "tuition_fee",
+  "admission_requirements",
+]);
+
 type ShortlistColumn = ColumnDef<typeof features, ShortlistedCourse>;
 
 interface ShortlistTableProps {
   items: ShortlistedCourse[];
   onRemove: (id: string) => Promise<void>;
   onSaveNotes: (id: string, notes: string) => Promise<void>;
+  onLookupDates: (id: string) => Promise<void>;
 }
 
 export function ShortlistTable({
   items,
   onRemove,
   onSaveNotes,
+  onLookupDates,
 }: ShortlistTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: "qs_world_ranking", desc: false },
@@ -102,7 +114,11 @@ export function ShortlistTable({
       {
         accessorKey: "university_location",
         header: "Location",
-        cell: ({ getValue }) => getValue<string | null>() ?? "—",
+        cell: ({ getValue }) => (
+          <span className="block max-w-[16rem] whitespace-pre-wrap break-words leading-snug">
+            {getValue<string | null>() ?? "—"}
+          </span>
+        ),
       },
       {
         accessorKey: "course_name",
@@ -116,7 +132,11 @@ export function ShortlistTable({
       {
         accessorKey: "tuition_fee",
         header: "Tuition",
-        cell: ({ getValue }) => getValue<string | null>() ?? "—",
+        cell: ({ getValue }) => (
+          <span className="block max-w-[18rem] whitespace-pre-wrap break-words leading-snug">
+            {getValue<string | null>() ?? "—"}
+          </span>
+        ),
       },
       {
         accessorKey: "duration",
@@ -127,9 +147,22 @@ export function ShortlistTable({
         accessorKey: "admission_requirements",
         header: "Requirements",
         cell: ({ getValue }) => (
-          <span className="block max-w-[180px] truncate" title={getValue<string | null>() ?? ""}>
+          <span className="block max-w-[22rem] whitespace-pre-wrap break-words leading-snug">
             {getValue<string | null>() ?? "—"}
           </span>
+        ),
+      },
+      {
+        id: "important_dates",
+        header: "Key dates",
+        accessorFn: (row) => nextImportantDate(row)?.date ?? "",
+        sortFn: (a, b) => {
+          const left = nextImportantDate(a.original)?.date ?? "9999";
+          const right = nextImportantDate(b.original)?.date ?? "9999";
+          return left < right ? -1 : left > right ? 1 : 0;
+        },
+        cell: ({ row }) => (
+          <ImportantDatesDialog course={row.original} onLookup={onLookupDates} />
         ),
       },
       {
@@ -187,7 +220,7 @@ export function ShortlistTable({
         ),
       },
     ],
-    [removing, onRemove, onSaveNotes]
+    [removing, onRemove, onSaveNotes, onLookupDates]
   );
 
   const table = useTable({
@@ -247,7 +280,14 @@ export function ShortlistTable({
                 {table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id}>
                     {row.getAllCells().map((cell) => (
-                      <TableCell key={cell.id}>
+                      <TableCell
+                        key={cell.id}
+                        className={
+                          WRAP_COLUMN_IDS.has(cell.column.id)
+                            ? "max-w-[22rem] whitespace-normal align-top"
+                            : undefined
+                        }
+                      >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}

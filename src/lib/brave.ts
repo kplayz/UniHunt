@@ -1,11 +1,22 @@
+import {
+  braveLevelQueryParts,
+  preferLevelMatchingSources,
+} from "./course-match";
+import { seedCourseSources } from "./known-programmes";
+import {
+  majorUniversityQueryTerms,
+  majorUniversityScore,
+  prioritizeMajorUniversitySources,
+} from "./major-universities";
+import { specializationMatchScore } from "./ranking";
 import type { SearchCriteriaInput } from "./types";
 import { isHttpUrl, safeHttpUrl } from "./url";
 
 const BRAVE_WEB_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
 const QUERY_LIMIT = 400;
-const MAX_SOURCES = 12;
+const MAX_SOURCES = 16;
 const MAX_TARGETED_LOOKUPS = 3;
-const SNIPPET_LIMIT = 180;
+const SNIPPET_LIMIT = 320;
 const REQUEST_GAP_MS = 1100;
 const REQUEST_TIMEOUT_MS = 20_000;
 
@@ -34,10 +45,15 @@ const AGGREGATOR_HOSTS = new Set([
   "bachelorsportal.com",
   "cappex.com",
   "collegeboard.org",
+  "collegedekho.com",
   "collegedunia.com",
+  "careers360.com",
+  "collegepravesh.com",
+  "getmyuni.com",
   "cwur.org",
   "distancelearningportal.com",
   "edurank.org",
+  "edudisha.com",
   "educations.com",
   "edvoy.com",
   "findamasters.com",
@@ -48,7 +64,9 @@ const AGGREGATOR_HOSTS = new Set([
   "hotcourses.com",
   "hotcoursesabroad.com",
   "idp.com",
+  "jagranjosh.com",
   "keystoneacademic.com",
+  "kollegeapply.com",
   "lawstudies.com",
   "leverageedu.com",
   "masterstudies.com",
@@ -76,6 +94,7 @@ const AGGREGATOR_HOSTS = new Set([
   "ucas.com",
   "unigo.com",
   "unipage.net",
+  "universitykart.com",
   "universityrankings.ch",
   "usnews.com",
   "webometrics.info",
@@ -106,41 +125,87 @@ const STOPWORDS = new Set([
   "university",
 ]);
 
+/**
+ * Brave Web Search only accepts this country enum. Sending any other code
+ * (IE, SG, AE, …) returns HTTP 422.
+ */
+const BRAVE_COUNTRY_ENUM = new Set([
+  "ALL",
+  "AR",
+  "AT",
+  "AU",
+  "BE",
+  "BR",
+  "CA",
+  "CH",
+  "CL",
+  "CN",
+  "DE",
+  "DK",
+  "ES",
+  "FI",
+  "FR",
+  "GB",
+  "GR",
+  "HK",
+  "ID",
+  "IN",
+  "IT",
+  "JP",
+  "KR",
+  "MX",
+  "MY",
+  "NL",
+  "NO",
+  "NZ",
+  "PH",
+  "PL",
+  "PT",
+  "RU",
+  "SA",
+  "SE",
+  "TR",
+  "TW",
+  "US",
+  "ZA",
+]);
+
 /** Brave `country` codes for common study destinations. */
-const BRAVE_COUNTRY_CODES: Record<string, string> = {
+export const BRAVE_COUNTRY_CODES: Record<string, string> = {
+  Argentina: "AR",
   Australia: "AU",
   Austria: "AT",
   Belgium: "BE",
+  Brazil: "BR",
   Canada: "CA",
+  Chile: "CL",
   China: "CN",
-  "Czech Republic": "CZ",
   Denmark: "DK",
   Finland: "FI",
   France: "FR",
   Germany: "DE",
   Greece: "GR",
   "Hong Kong": "HK",
-  Hungary: "HU",
   India: "IN",
-  Ireland: "IE",
+  Indonesia: "ID",
   Italy: "IT",
   Japan: "JP",
   Malaysia: "MY",
+  Mexico: "MX",
   Netherlands: "NL",
   "New Zealand": "NZ",
   Norway: "NO",
+  Philippines: "PH",
   Poland: "PL",
   Portugal: "PT",
-  Qatar: "QA",
   "Saudi Arabia": "SA",
-  Singapore: "SG",
   "South Africa": "ZA",
   "South Korea": "KR",
   Spain: "ES",
   Sweden: "SE",
   Switzerland: "CH",
+  Taiwan: "TW",
   Turkey: "TR",
-  "United Arab Emirates": "AE",
   "United Kingdom": "GB",
   "United States": "US",
 };
@@ -148,7 +213,15 @@ const BRAVE_COUNTRY_CODES: Record<string, string> = {
 let nextRequestAt = 0;
 
 export function getBraveApiKey(): string | undefined {
-  return process.env.BRAVE_SEARCH_API_KEY || process.env.BRAVE_API_KEY;
+  const raw = process.env.BRAVE_SEARCH_API_KEY || process.env.BRAVE_API_KEY;
+  if (!raw) return undefined;
+  return raw.trim().replace(/^["']|["']$/g, "") || undefined;
+}
+
+function braveCountryParam(country?: string): string | undefined {
+  if (!country) return undefined;
+  const code = BRAVE_COUNTRY_CODES[country] ?? country.toUpperCase();
+  return BRAVE_COUNTRY_ENUM.has(code) ? code : undefined;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -170,7 +243,22 @@ function hostnameOf(url: string): string | null {
   }
 }
 
-function isAggregatorUrl(url: string): boolean {
+export function registrableHost(url: string): string | null {
+  const host = hostnameOf(url);
+  if (!host) return null;
+  const parts = host.split(".");
+  if (
+    parts.length >= 3 &&
+    parts[parts.length - 1] === "in" &&
+    ["ac", "edu", "gov", "co", "res", "ernet"].includes(parts[parts.length - 2])
+  ) {
+    return parts.slice(-3).join(".");
+  }
+  if (parts.length >= 2) return parts.slice(-2).join(".");
+  return host;
+}
+
+export function isAggregatorUrl(url: string): boolean {
   const host = hostnameOf(url);
   if (!host) return true;
   if (AGGREGATOR_HOSTS.has(host)) return true;
@@ -225,27 +313,45 @@ function buildSourceQueries(criteria: SearchCriteriaInput): Array<{
   query: string;
   country?: string;
 }> {
-  const level = criteria.courseLevel.trim();
+  const { include, exclude } = braveLevelQueryParts(criteria.courseLevel);
   const subject = subjectPhrase(criteria);
-  const countries = criteria.countries.filter(Boolean);
-  const countryHint = countries.slice(0, 3).join(" ");
-
-  return [
+  const country = criteria.countries.find(Boolean) ?? "";
+  const countryCode = country ? braveCountryParam(country) : undefined;
+  const queries: Array<{ query: string; country?: string }> = [
     {
       query: clipQuery(
         [
-          level,
+          include || criteria.courseLevel.trim(),
           subject,
-          countryHint,
-          "university official course page tuition admission",
+          country,
+          "university course tuition admission",
+          exclude,
         ]
           .filter(Boolean)
           .join(" ")
       ),
-      country:
-        countries.length === 1 ? BRAVE_COUNTRY_CODES[countries[0]] : undefined,
+      country: countryCode,
     },
   ];
+
+  if (subject && subject !== "degree") {
+    queries.push({
+      query: clipQuery(
+        [
+          `"${subject}"`,
+          include || criteria.courseLevel.trim(),
+          majorUniversityQueryTerms(country),
+          country,
+          "university",
+        ]
+          .filter(Boolean)
+          .join(" ")
+      ),
+      country: countryCode,
+    });
+  }
+
+  return queries;
 }
 
 function parseRateLimitReset(header: string | null): number {
@@ -255,7 +361,50 @@ function parseRateLimitReset(header: string | null): number {
   return Number.isFinite(seconds) && seconds > 0 ? seconds : 1;
 }
 
-async function braveWebSearch(
+interface BraveErrorBody {
+  error?: {
+    code?: string;
+    detail?: string;
+    status?: number;
+  };
+}
+
+function describeBraveFailure(status: number, body: unknown): string {
+  const error =
+    body && typeof body === "object" && "error" in body
+      ? (body as BraveErrorBody).error
+      : undefined;
+  const code = error?.code;
+  const detail = error?.detail;
+
+  if (
+    status === 401 ||
+    status === 403 ||
+    code === "SUBSCRIPTION_TOKEN_INVALID"
+  ) {
+    return "Brave Search API key is invalid or is not enabled for Web Search. Create a Web Search key in the Brave API dashboard.";
+  }
+
+  if (status === 422 || code === "VALIDATION") {
+    return detail
+      ? `Brave Search rejected the query: ${detail}`
+      : "Brave Search rejected the request (invalid parameters).";
+  }
+
+  return detail
+    ? `Brave Search failed (${status}): ${detail}`
+    : `Brave Search failed (${status}).`;
+}
+
+async function readBraveErrorBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function braveWebSearch(
   query: string,
   country?: string
 ): Promise<BraveWebResult[]> {
@@ -266,19 +415,18 @@ async function braveWebSearch(
     );
   }
 
-  const params = new URLSearchParams({
-    q: query,
-    count: "20",
-    extra_snippets: "false",
-    result_filter: "web",
-    safesearch: "moderate",
-    spellcheck: "true",
-    text_decorations: "false",
-  });
-  if (country) params.set("country", country);
+  const countryCode = braveCountryParam(country);
+  const attempts: Array<{ country?: string }> = [{ country: countryCode }];
+  if (countryCode) attempts.push({ country: undefined });
 
   let lastError = "Brave Search failed.";
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (const attempt of attempts) {
+    const params = new URLSearchParams({
+      q: query,
+      count: "20",
+    });
+    if (attempt.country) params.set("country", attempt.country);
+
     await throttleBraveRequests();
 
     const response = await fetch(`${BRAVE_WEB_SEARCH_URL}?${params.toString()}`, {
@@ -290,18 +438,29 @@ async function braveWebSearch(
     });
 
     if (response.status === 429) {
-      const waitSec = parseRateLimitReset(response.headers.get("x-ratelimit-reset"));
+      const waitSec = parseRateLimitReset(
+        response.headers.get("x-ratelimit-reset")
+      );
       lastError = "Brave Search rate limit exceeded. Please try again shortly.";
       await sleep(waitSec * 1000 + 150);
       continue;
     }
 
-    if (response.status === 401 || response.status === 403) {
-      throw new Error("Brave Search API key is invalid or missing the Web Search product.");
-    }
-
     if (!response.ok) {
-      lastError = `Brave Search failed (${response.status}).`;
+      const body = await readBraveErrorBody(response);
+      console.error("Brave Search error:", response.status, body);
+      lastError = describeBraveFailure(response.status, body);
+      const code =
+        body && typeof body === "object" && "error" in body
+          ? (body as BraveErrorBody).error?.code
+          : undefined;
+      if (
+        response.status === 401 ||
+        response.status === 403 ||
+        code === "SUBSCRIPTION_TOKEN_INVALID"
+      ) {
+        throw new Error(lastError);
+      }
       continue;
     }
 
@@ -322,7 +481,194 @@ async function braveWebSearch(
   throw new Error(lastError);
 }
 
-function sourceQuality(result: BraveWebResult): number {
+const PROMOTIONAL_NAME_RE =
+  /\b(best|top|#\s*1|no\.?\s*1|leading|ranked?|ranking|apply now|admission\s*20\d{2}|colleges?\s+in\s+|universities\s+in\s+|world[- ]class|most\s+popular|highest\s+placement)\b/i;
+
+const INSTITUTION_NAME_RE =
+  /\b(university|universiti|universidad|universität|institute|college|vidyapeetham|vidyapeeth|polytechnic|hochschule|schule|école|iit|iiit|nit|bits)\b/i;
+
+export function isPromotionalUniversityName(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (PROMOTIONAL_NAME_RE.test(trimmed)) return true;
+  if (/^\s*(best|top)\b/i.test(trimmed)) return true;
+  return trimmed.split(/\s+/).length > 10 && INSTITUTION_NAME_RE.test(trimmed);
+}
+
+function looksLikeUniversityName(value: string): boolean {
+  if (isPromotionalUniversityName(value)) return false;
+  return INSTITUTION_NAME_RE.test(value);
+}
+
+function formatHostToken(token: string): string {
+  if (token.length <= 4) return token.toUpperCase();
+  return token.charAt(0).toUpperCase() + token.slice(1);
+}
+
+export function nameFromRegistrableHost(url: string): string {
+  const root = registrableHost(url);
+  if (!root) return "";
+  const slug = root.split(".")[0]?.toLowerCase() ?? "";
+  if (
+    !slug ||
+    slug.length <= 2 ||
+    ["online", "admission", "admissions", "course", "courses", "www"].includes(
+      slug
+    )
+  ) {
+    return "";
+  }
+
+  const pretty = slug
+    .replace(/university$/i, "")
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map(formatHostToken)
+    .join(" ")
+    .trim();
+  if (!pretty) return "";
+  if (
+    /\b(university|institute|college|iit|iiit|nit|bits|vit|mit|iisc)\b/i.test(
+      pretty
+    ) ||
+    /^[A-Z]{2,6}(?:\s+[A-Za-z]+)*$/.test(pretty)
+  ) {
+    return pretty;
+  }
+  return `${pretty} University`;
+}
+
+function findOfficialNameInText(text: string): string | null {
+  const cleaned = text.replace(
+    /\b(?:choose|does|visit|explore|apply|welcome to|welcome|about|find|discover|search|compare|join|why|how|what)\s+/gi,
+    " "
+  );
+  const pattern =
+    /\b([A-Z][A-Za-z'.]+(?:\s+(?:of|and|&|the|for|[A-Z][A-Za-z'.]+)){0,6})\s+(University|Universiti|Universität|Universidad|Institute(?:\s+of\s+(?:Technology|Science|Engineering|Information\s+Technology))?|Vidyapeetham|Vidyapeeth|Hochschule|Polytechnic)\b/g;
+  const matches: string[] = [];
+  for (const match of cleaned.matchAll(pattern)) {
+    const name = match[0].replace(/\s+/g, " ").trim();
+    if (isPromotionalUniversityName(name)) continue;
+    const words = name.split(/\s+/);
+    if (words.length < 2 || words.length > 8) continue;
+    const first = words[0].replace(/[^A-Za-z]/g, "");
+    if (
+      /^(The|A|An|Best|Top|Choose|Does|Visit|Explore|Apply|Welcome|About|Find|Discover|Search|Compare|Join|Why|How|What)$/i.test(
+        first
+      )
+    ) {
+      continue;
+    }
+    matches.push(name);
+  }
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => b.length - a.length);
+  return matches[0];
+}
+
+function nameAgreesWithHost(official: string, url: string): boolean {
+  const hostSlug = (registrableHost(url)?.split(".")[0] ?? "").toLowerCase();
+  if (!hostSlug) return true;
+  const officialLower = official.toLowerCase();
+  const hostCompact = hostSlug.replace(/[-_]/g, "");
+  const officialCompact = officialLower.replace(/[^a-z0-9]/g, "");
+  if (
+    officialLower.includes(hostSlug.replace(/[-_]/g, " ")) ||
+    officialCompact.includes(hostCompact) ||
+    hostCompact.includes(officialCompact)
+  ) {
+    return true;
+  }
+  const initials = official
+    .split(/\s+/)
+    .filter((word) => !/^(of|and|the|&|for|university|institute|college)$/i.test(word))
+    .map((word) => word[0] ?? "")
+    .join("")
+    .toLowerCase();
+  if (
+    initials &&
+    (hostSlug === initials ||
+      hostCompact === initials ||
+      hostCompact.startsWith(initials) ||
+      initials.startsWith(hostCompact))
+  ) {
+    return true;
+  }
+  const hostParts = hostSlug.split(/[-_]/).filter((part) => part.length > 2);
+  if (hostParts.length > 1 && hostParts.every((part) => officialLower.includes(part))) {
+    return true;
+  }
+  return hostSlug.length > 4;
+}
+
+export function universityNameFromSource(source: BraveWebResult): string {
+  const chunks = [
+    ...source.title.split(/\s[|\-–—]\s/),
+    source.description,
+    ...source.extraSnippets,
+  ]
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const fromText = chunks
+    .map(findOfficialNameInText)
+    .filter((name): name is string => Boolean(name))
+    .sort((a, b) => b.length - a.length)[0];
+  const fromHost = nameFromRegistrableHost(source.url);
+  if (fromText && nameAgreesWithHost(fromText, source.url)) return fromText;
+
+  const titleParts = source.title
+    .split(/\s[|\-–—]\s/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const named = titleParts.find(looksLikeUniversityName);
+  if (named && nameAgreesWithHost(named, source.url)) return named;
+
+  if (fromHost) return fromHost;
+  if (fromText) return fromText;
+
+  const fallback = titleParts[titleParts.length - 1] ?? source.title;
+  if (isPromotionalUniversityName(fallback)) {
+    return fromHost || fallback;
+  }
+  return fallback;
+}
+
+export function courseNameFromSource(
+  source: BraveWebResult,
+  fallback: string
+): string {
+  const titleParts = source.title
+    .split(/\s[|\-–—]\s/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const first = titleParts[0] ?? "";
+  if (
+    first &&
+    !isPromotionalUniversityName(first) &&
+    !looksLikeUniversityName(first)
+  ) {
+    return first;
+  }
+
+  try {
+    const slug = new URL(source.url).pathname
+      .split("/")
+      .filter(Boolean)
+      .pop()
+      ?.replace(/\.(html?|php|aspx)$/i, "")
+      .replace(/[-_]+/g, " ")
+      .trim();
+    if (slug && slug.length > 3 && !/^(home|index|programmes?-offered)$/i.test(slug)) {
+      return slug.replace(/\b\w/g, (char) => char.toUpperCase());
+    }
+  } catch {
+    /* ignore invalid URLs */
+  }
+
+  return fallback || first || source.title;
+}
+
+function sourceQuality(result: BraveWebResult, subject: string): number {
   let score = 0;
   if (isOfficialLookingUrl(result.url)) score += 5;
   if (!isAggregatorUrl(result.url)) score += 2;
@@ -330,7 +676,25 @@ function sourceQuality(result: BraveWebResult): number {
   if (/course|program|programme|degree|study|tuition|admission/i.test(haystack)) {
     score += 3;
   }
+  score += specializationMatchScore(haystack, subject) * 6;
+  score += majorUniversityScore(result.title, result.url);
   return score;
+}
+
+function diversifyByHost(results: BraveWebResult[]): BraveWebResult[] {
+  const uniqueHost: BraveWebResult[] = [];
+  const rest: BraveWebResult[] = [];
+  const seen = new Set<string>();
+  for (const result of results) {
+    const host = registrableHost(result.url) ?? hostnameOf(result.url);
+    if (host && !seen.has(host)) {
+      seen.add(host);
+      uniqueHost.push(result);
+    } else {
+      rest.push(result);
+    }
+  }
+  return uniqueHost;
 }
 
 function dedupeSources(results: BraveWebResult[]): BraveWebResult[] {
@@ -349,7 +713,8 @@ export async function searchCourseSources(
   criteria: SearchCriteriaInput
 ): Promise<BraveWebResult[]> {
   const queries = buildSourceQueries(criteria);
-  const collected: BraveWebResult[] = [];
+  const seeds = seedCourseSources(criteria);
+  const collected: BraveWebResult[] = [...seeds];
 
   for (const { query, country } of queries) {
     const page = await braveWebSearch(query, country);
@@ -358,18 +723,45 @@ export async function searchCourseSources(
 
   const unique = dedupeSources(collected);
   const preferred = unique.filter((result) => !isAggregatorUrl(result.url));
+  const subject = subjectPhrase(criteria);
   const ranked = (preferred.length >= 6 ? preferred : unique)
     .slice()
-    .sort((a, b) => sourceQuality(b) - sourceQuality(a));
-
-  return ranked.slice(0, MAX_SOURCES);
+    .sort((a, b) => sourceQuality(b, subject) - sourceQuality(a, subject));
+  const diversified = diversifyByHost(ranked);
+  const selected = preferLevelMatchingSources(
+    diversified,
+    criteria.courseLevel,
+    Math.max(MAX_SOURCES, diversified.length)
+  );
+  const selectedHosts = new Set(
+    selected.map((source) => registrableHost(source.url)).filter(Boolean)
+  );
+  const missingSeeds = seeds.filter((seed) => {
+    const host = registrableHost(seed.url);
+    return host ? !selectedHosts.has(host) : true;
+  });
+  const withSeeds = prioritizeMajorUniversitySources(
+    [...missingSeeds, ...selected],
+    MAX_SOURCES
+  );
+  console.info(
+    "Brave course sources:",
+    withSeeds.map((source) => `${universityNameFromSource(source)} <${source.url}>`).join(" | ")
+  );
+  return withSeeds;
 }
 
 export function formatSourcesForPrompt(sources: BraveWebResult[]): string {
   return sources
     .map((source, index) => {
-      const snippet = source.description.slice(0, SNIPPET_LIMIT).trim();
+      const snippet = [source.description, ...source.extraSnippets]
+        .filter(Boolean)
+        .join(" ")
+        .slice(0, SNIPPET_LIMIT)
+        .trim();
+      const university = universityNameFromSource(source);
       return `[${index + 1}] ${source.title}
+University: ${university}
 URL: ${source.url}${snippet ? `\n${snippet}` : ""}`;
     })
     .join("\n\n");

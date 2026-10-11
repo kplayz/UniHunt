@@ -41,6 +41,19 @@ export function ShortlistView({ userEmail, items }: ShortlistViewProps) {
     router.refresh();
   }
 
+  async function handleLookupDates(id: string) {
+    const res = await fetch("/api/shortlist/important-dates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? "Failed to find important dates");
+    }
+    router.refresh();
+  }
+
   async function handleRemove(id: string) {
     const res = await fetch(`/api/shortlist?id=${id}`, { method: "DELETE" });
     if (!res.ok) {
@@ -68,6 +81,7 @@ export function ShortlistView({ userEmail, items }: ShortlistViewProps) {
           items={items}
           onRemove={handleRemove}
           onSaveNotes={handleSaveNotes}
+          onLookupDates={handleLookupDates}
         />
       </main>
     </div>

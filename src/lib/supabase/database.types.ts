@@ -47,6 +47,8 @@ export type Database = {
           created_at: string;
           duration: string | null;
           id: string;
+          important_dates: Json | null;
+          important_dates_checked_at: string | null;
           intake_period: string | null;
           is_manual: boolean;
           language: string | null;
@@ -70,6 +72,8 @@ export type Database = {
           created_at?: string;
           duration?: string | null;
           id?: string;
+          important_dates?: Json | null;
+          important_dates_checked_at?: string | null;
           intake_period?: string | null;
           is_manual?: boolean;
           language?: string | null;
@@ -93,6 +97,8 @@ export type Database = {
           created_at?: string;
           duration?: string | null;
           id?: string;
+          important_dates?: Json | null;
+          important_dates_checked_at?: string | null;
           intake_period?: string | null;
           is_manual?: boolean;
           language?: string | null;

@@ -4,7 +4,7 @@ import { searchUniversityCourses } from "@/lib/huggingface";
 import type { Json } from "@/lib/supabase/database.types";
 import { createClient } from "@/lib/supabase/server";
 
-export const maxDuration = 120;
+export const maxDuration = 180;
 
 const searchSchema = z.object({
   courseLevel: z.string(),
@@ -44,15 +44,17 @@ export async function POST(request: Request) {
     }
 
     const criteria = parsed.data;
-    const results = await searchUniversityCourses(criteria);
+    const { results, warning } = await searchUniversityCourses(criteria);
 
-    await supabase.from("search_sessions").insert({
-      user_id: user.id,
-      criteria: criteria as Json,
-      results: results as unknown as Json,
-    });
+    if (!warning && results.length > 0) {
+      await supabase.from("search_sessions").insert({
+        user_id: user.id,
+        criteria: criteria as Json,
+        results: results as unknown as Json,
+      });
+    }
 
-    return NextResponse.json({ results });
+    return NextResponse.json({ results, warning });
   } catch (error) {
     console.error("Search error:", error);
     const message =

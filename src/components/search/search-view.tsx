@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { AppHeader } from "@/components/layout/app-header";
 import { SearchForm } from "@/components/search/search-form";
 import { ResultsTable } from "@/components/search/results-table";
-import { DEFAULT_SEARCH_CRITERIA } from "@/lib/constants";
+import { DEFAULT_SEARCH_CRITERIA, MAX_SEARCH_COUNTRIES, tooManyCountriesWarning } from "@/lib/constants";
 import type { SearchCriteria, UniversityCourseResult } from "@/lib/types";
 
 interface SearchViewProps {
@@ -43,6 +43,7 @@ export function SearchView({
     lastSearchedAt ?? null
   );
   const [loading, setLoading] = useState(false);
+  const [searchWarning, setSearchWarning] = useState<string | null>(null);
   const [savedKeys, setSavedKeys] = useState<Set<string>>(
     () => new Set(shortlistedKeys)
   );
@@ -51,7 +52,15 @@ export function SearchView({
     setLoading(true);
     setResults([]);
     setRestoredAt(null);
+    setSearchWarning(null);
     try {
+      if (criteria.countries.length > MAX_SEARCH_COUNTRIES) {
+        const warning = tooManyCountriesWarning(criteria.countries.length);
+        setSearchWarning(warning);
+        toast.warning(warning);
+        return;
+      }
+
       const res = await fetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -59,6 +68,12 @@ export function SearchView({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Search failed");
+      if (data.warning) {
+        setSearchWarning(data.warning);
+        toast.warning(data.warning);
+        setResults([]);
+        return;
+      }
       setResults(data.results);
       toast.success(`Found ${data.results.length} matching courses`);
     } catch (error) {
@@ -125,6 +140,7 @@ export function SearchView({
           onSearch={handleSearch}
           loading={loading}
           restoredAt={restoredAt}
+          warning={searchWarning}
         />
         <ResultsTable
           results={results}

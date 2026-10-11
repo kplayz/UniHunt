@@ -178,7 +178,7 @@ Click **New variable** for each of these (names must match exactly):
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://qnzkuskdkyqyeglvacqx.supabase.co` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | publishable key from [Supabase API settings](https://supabase.com/dashboard/project/qnzkuskdkyqyeglvacqx/settings/api) |
-| `HF_MODEL` | `Qwen/Qwen2.5-72B-Instruct` (optional) |
+| `HF_MODEL` | `meta-llama/Llama-3.3-70B-Instruct` (optional; this is the default) |
 
 Click **New secret** for:
 

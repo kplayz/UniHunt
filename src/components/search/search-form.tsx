@@ -6,6 +6,7 @@ import {
   CANDIDATE_TYPES,
   COURSE_LEVELS,
   COURSE_TYPES,
+  MAX_SEARCH_COUNTRIES,
 } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,7 @@ interface SearchFormProps {
   onSearch: () => void;
   loading: boolean;
   restoredAt?: string | null;
+  warning?: string | null;
 }
 
 export function SearchForm({
@@ -41,6 +43,7 @@ export function SearchForm({
   onSearch,
   loading,
   restoredAt,
+  warning,
 }: SearchFormProps) {
   function update<K extends keyof SearchCriteria>(key: K, value: SearchCriteria[K]) {
     onChange({ ...criteria, [key]: value });
@@ -54,8 +57,8 @@ export function SearchForm({
           Course Search Criteria
         </CardTitle>
         <CardDescription>
-          Fill in your preferences and candidate details. AI will search the live web
-          for matching universities and official course pages.
+          Fill in your preferences and candidate details. Each selected country is
+          searched independently, then results are combined.
           {restoredAt
             ? ` Last search restored from ${new Date(restoredAt).toLocaleString()}.`
             : null}
@@ -126,6 +129,16 @@ export function SearchForm({
                 selected={criteria.countries}
                 onChange={(countries) => update("countries", countries)}
               />
+              <p
+                className={
+                  criteria.countries.length > MAX_SEARCH_COUNTRIES
+                    ? "text-xs text-amber-700 dark:text-amber-300"
+                    : "text-xs text-muted-foreground"
+                }
+              >
+                Each country is searched separately. Select at most{" "}
+                {MAX_SEARCH_COUNTRIES} countries.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -223,11 +236,22 @@ export function SearchForm({
             />
           </div>
 
+          {warning ? (
+            <div
+              role="alert"
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100"
+            >
+              {warning}
+            </div>
+          ) : null}
+
           <Button type="submit" size="lg" disabled={loading} className="w-full sm:w-auto">
             {loading ? (
               <>
                 <Loader2 className="animate-spin" />
-                Searching...
+                {criteria.countries.length > 1
+                  ? "Searching each country..."
+                  : "Searching..."}
               </>
             ) : (
               <>

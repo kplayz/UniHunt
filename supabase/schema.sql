@@ -31,6 +31,12 @@ alter table public.shortlisted_courses
   add column if not exists intake_period text,
   add column if not exists scholarship_info text;
 
+-- Important application/scholarship/session dates found on the university
+-- website via Brave Search, stored per shortlisted course.
+alter table public.shortlisted_courses
+  add column if not exists important_dates jsonb,
+  add column if not exists important_dates_checked_at timestamptz;
+
 create index if not exists shortlisted_courses_user_id_idx
   on public.shortlisted_courses (user_id);
 

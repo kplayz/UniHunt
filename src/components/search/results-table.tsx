@@ -50,6 +50,12 @@ const features = tableFeatures({
   sortedRowModel: createSortedRowModel(),
 });
 
+const WRAP_COLUMN_IDS = new Set([
+  "universityLocation",
+  "tuitionFee",
+  "admissionRequirements",
+]);
+
 type ResultColumn = ColumnDef<typeof features, UniversityCourseResult>;
 
 interface ResultsTableProps {
@@ -65,9 +71,7 @@ export function ResultsTable({
   onShortlist,
   restored = false,
 }: ResultsTableProps) {
-  const [sorting, setSorting] = useState<SortingState>([
-    { id: "qsWorldRanking", desc: false },
-  ]);
+  const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [adding, setAdding] = useState(false);
@@ -129,10 +133,19 @@ export function ResultsTable({
       {
         accessorKey: "universityLocation",
         header: "Location",
+        cell: ({ getValue }) => (
+          <span className="block max-w-[16rem] whitespace-pre-wrap break-words leading-snug">
+            {getValue<string>() || "—"}
+          </span>
+        ),
       },
       {
         accessorKey: "courseName",
         header: "Course",
+      },
+      {
+        accessorKey: "courseLevel",
+        header: "Level",
       },
       {
         accessorKey: "specialization",
@@ -145,6 +158,11 @@ export function ResultsTable({
       {
         accessorKey: "tuitionFee",
         header: "Tuition Fee",
+        cell: ({ getValue }) => (
+          <span className="block max-w-[18rem] whitespace-pre-wrap break-words leading-snug">
+            {getValue<string>() || "—"}
+          </span>
+        ),
       },
       {
         accessorKey: "duration",
@@ -154,8 +172,8 @@ export function ResultsTable({
         accessorKey: "admissionRequirements",
         header: "Admission Req.",
         cell: ({ getValue }) => (
-          <span className="block max-w-[200px] truncate" title={getValue<string>()}>
-            {getValue<string>()}
+          <span className="block max-w-[22rem] whitespace-pre-wrap break-words leading-snug">
+            {getValue<string>() || "—"}
           </span>
         ),
       },
@@ -252,7 +270,7 @@ export function ResultsTable({
           <div>
             <CardTitle>Search Results</CardTitle>
             <CardDescription>
-              {results.length} universities found — sorted by QS ranking by default
+              {results.length} universities found — major universities and closest subject matches first; click QS Rank to sort by ranking
               {restored ? ". Showing your last search until you run a new one." : ""}
             </CardDescription>
           </div>
@@ -293,7 +311,14 @@ export function ResultsTable({
                 table.getRowModel().rows.map((row) => (
                   <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
                     {row.getAllCells().map((cell) => (
-                      <TableCell key={cell.id}>
+                      <TableCell
+                        key={cell.id}
+                        className={
+                          WRAP_COLUMN_IDS.has(cell.column.id)
+                            ? "max-w-[22rem] whitespace-normal align-top"
+                            : undefined
+                        }
+                      >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}

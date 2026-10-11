@@ -26,7 +26,9 @@ function DetailRow({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="grid grid-cols-3 gap-2 py-1.5">
       <dt className="text-sm text-muted-foreground">{label}</dt>
-      <dd className="col-span-2 text-sm">{value?.trim() || "—"}</dd>
+      <dd className="col-span-2 text-sm whitespace-pre-wrap break-words">
+        {value?.trim() || "—"}
+      </dd>
     </div>
   );
 }
