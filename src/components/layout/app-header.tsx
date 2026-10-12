@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/search", label: "Search", icon: Search },
-  { href: "/shortlist", label: "Shortlist", icon: Star },
+  { href: "/shortlist", label: "Wishlist", icon: Star },
 ];
 
 function NavLinks({

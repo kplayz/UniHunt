@@ -16,9 +16,12 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { ArrowUpDown, ExternalLink, Trash2 } from "lucide-react";
+import type { FitCategory } from "@/lib/candidate-fit";
 import { compareRanking } from "@/lib/ranking";
 import type { ShortlistedCourse } from "@/lib/types";
 import { CourseDetailsDialog } from "@/components/shortlist/course-details-dialog";
+import { DocumentsDialog } from "@/components/shortlist/documents-dialog";
+import { FitBadge } from "@/components/shortlist/fit-badge";
 import {
   ImportantDatesDialog,
   nextImportantDate,
@@ -26,6 +29,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -64,6 +74,10 @@ interface ShortlistTableProps {
   onRemove: (id: string) => Promise<void>;
   onSaveNotes: (id: string, notes: string) => Promise<void>;
   onLookupDates: (id: string) => Promise<void>;
+  onSetFit: (id: string, fit: FitCategory) => Promise<void>;
+  canEdit?: boolean;
+  canComment?: boolean;
+  canDelete?: boolean;
 }
 
 export function ShortlistTable({
@@ -71,6 +85,10 @@ export function ShortlistTable({
   onRemove,
   onSaveNotes,
   onLookupDates,
+  onSetFit,
+  canEdit = true,
+  canComment = true,
+  canDelete = true,
 }: ShortlistTableProps) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: "qs_world_ranking", desc: false },
@@ -110,6 +128,31 @@ export function ShortlistTable({
             <ArrowUpDown className="size-3.5" />
           </Button>
         ),
+      },
+      {
+        id: "fit",
+        header: "Fit",
+        accessorFn: (row) => row.fit ?? "",
+        cell: ({ row }) =>
+          canEdit ? (
+            <Select
+              value={row.original.fit ?? undefined}
+              onValueChange={(value) => {
+                void onSetFit(row.original.id, value as FitCategory).catch(() => undefined);
+              }}
+            >
+              <SelectTrigger className="w-[7.5rem]" aria-label={`Fit for ${row.original.course_name}`}>
+                <SelectValue placeholder="Set fit" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="dream">Dream</SelectItem>
+                <SelectItem value="reach">Reach</SelectItem>
+                <SelectItem value="target">Target</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : (
+            <FitBadge fit={row.original.fit} reason={row.original.fit_reason} />
+          ),
       },
       {
         accessorKey: "university_location",
@@ -162,7 +205,11 @@ export function ShortlistTable({
           return left < right ? -1 : left > right ? 1 : 0;
         },
         cell: ({ row }) => (
-          <ImportantDatesDialog course={row.original} onLookup={onLookupDates} />
+          <ImportantDatesDialog
+            course={row.original}
+            onLookup={onLookupDates}
+            canSearch={canEdit}
+          />
         ),
       },
       {
@@ -199,7 +246,18 @@ export function ShortlistTable({
         header: "",
         cell: ({ row }) => (
           <div className="flex items-center gap-1">
-            <CourseDetailsDialog course={row.original} onSaveNotes={onSaveNotes} />
+            <DocumentsDialog
+              courseId={row.original.id}
+              courseName={row.original.course_name}
+              canEdit={canEdit}
+            />
+            <CourseDetailsDialog
+              course={row.original}
+              onSaveNotes={onSaveNotes}
+              canEdit={canEdit}
+              canComment={canComment}
+            />
+            {canDelete && (
             <Button
               variant="ghost"
               size="icon-sm"
@@ -216,11 +274,12 @@ export function ShortlistTable({
             >
               <Trash2 className="size-4 text-destructive" />
             </Button>
+            )}
           </div>
         ),
       },
     ],
-    [removing, onRemove, onSaveNotes, onLookupDates]
+    [removing, onRemove, onSaveNotes, onLookupDates, onSetFit, canEdit, canComment, canDelete]
   );
 
   const table = useTable({
@@ -239,13 +298,13 @@ export function ShortlistTable({
       <CardHeader>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle>Your Shortlist</CardTitle>
+            <CardTitle>Wishlist</CardTitle>
             <CardDescription>
-              {items.length} course{items.length !== 1 ? "s" : ""} saved — persisted to your account
+              {items.length} course{items.length !== 1 ? "s" : ""} saved. Dream, Reach, and Target come from the candidate profile and can be changed.
             </CardDescription>
           </div>
           <Input
-            placeholder="Filter shortlist..."
+            placeholder="Filter wishlist..."
             value={globalFilter}
             onChange={(e) => setGlobalFilter(e.target.value)}
             className="max-w-xs"
@@ -255,7 +314,7 @@ export function ShortlistTable({
       <CardContent>
         {items.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-16 text-center">
-            <p className="text-muted-foreground">No courses shortlisted yet.</p>
+            <p className="text-muted-foreground">No courses on this wishlist yet.</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Search for courses or add one manually.
             </p>

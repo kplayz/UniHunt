@@ -19,8 +19,10 @@ import {
 } from "@tanstack/react-table";
 import { ArrowUpDown, ExternalLink, Star } from "lucide-react";
 import { toast } from "sonner";
+import { classifyCourseFit } from "@/lib/candidate-fit";
 import { compareRanking } from "@/lib/ranking";
-import type { UniversityCourseResult } from "@/lib/types";
+import type { SearchCriteria, UniversityCourseResult } from "@/lib/types";
+import { FitBadge } from "@/components/shortlist/fit-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -60,6 +62,7 @@ type ResultColumn = ColumnDef<typeof features, UniversityCourseResult>;
 
 interface ResultsTableProps {
   results: UniversityCourseResult[];
+  criteria: SearchCriteria;
   shortlistedIds: Set<string>;
   onShortlist: (course: UniversityCourseResult) => Promise<void>;
   restored?: boolean;
@@ -67,6 +70,7 @@ interface ResultsTableProps {
 
 export function ResultsTable({
   results,
+  criteria,
   shortlistedIds,
   onShortlist,
   restored = false,
@@ -144,6 +148,17 @@ export function ResultsTable({
         header: "Course",
       },
       {
+        id: "fit",
+        header: "Fit",
+        accessorFn: (row) => row.fit ?? classifyCourseFit(row, criteria).fit,
+        cell: ({ row }) => {
+          const labelled = row.original.fit
+            ? { fit: row.original.fit, fitReason: row.original.fitReason ?? "" }
+            : classifyCourseFit(row.original, criteria);
+          return <FitBadge fit={labelled.fit} reason={labelled.fitReason} />;
+        },
+      },
+      {
         accessorKey: "courseLevel",
         header: "Level",
       },
@@ -199,7 +214,7 @@ export function ResultsTable({
       },
       {
         id: "actions",
-        header: "Shortlist",
+        header: "Wishlist",
         cell: ({ row }) => {
           const course = row.original;
           const isShortlisted = shortlistedIds.has(course.id);
@@ -212,7 +227,7 @@ export function ResultsTable({
                 try {
                   await onShortlist(course);
                 } catch {
-                  toast.error("Failed to add to shortlist");
+                  toast.error("Failed to add to wishlist");
                 }
               }}
             >
@@ -224,7 +239,7 @@ export function ResultsTable({
         enableSorting: false,
       },
     ],
-    [shortlistedIds, adding, onShortlist]
+    [shortlistedIds, adding, onShortlist, criteria]
   );
 
   const table = useTable({
@@ -253,9 +268,9 @@ export function ResultsTable({
         }
       }
       setRowSelection({});
-      toast.success(`Added ${selectedCourses.length} course(s) to shortlist`);
+      toast.success(`Added ${selectedCourses.length} course(s) to wishlist`);
     } catch {
-      toast.error("Failed to add some courses to shortlist");
+      toast.error("Failed to add some courses to wishlist");
     } finally {
       setAdding(false);
     }
@@ -270,7 +285,7 @@ export function ResultsTable({
           <div>
             <CardTitle>Search Results</CardTitle>
             <CardDescription>
-              {results.length} universities found — major universities and closest subject matches first; click QS Rank to sort by ranking
+              {results.length} universities found — ordered by your grades, budget, subjects, and qualification, then labelled Dream, Reach, or Target
               {restored ? ". Showing your last search until you run a new one." : ""}
             </CardDescription>
           </div>

@@ -61,7 +61,7 @@ export function AddManualDialog({ onAdd }: AddManualDialogProps) {
     setLoading(true);
     try {
       await onAdd(form);
-      toast.success("Added to shortlist");
+      toast.success("Added to wishlist");
       setForm(emptyForm);
       setOpen(false);
     } catch (error) {
@@ -209,7 +209,7 @@ export function AddManualDialog({ onAdd }: AddManualDialogProps) {
           </div>
           <DialogFooter>
             <Button type="submit" disabled={loading}>
-              {loading ? "Adding..." : "Add to shortlist"}
+              {loading ? "Adding..." : "Add to wishlist"}
             </Button>
           </DialogFooter>
         </form>

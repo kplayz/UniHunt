@@ -3,6 +3,7 @@ import { z } from "zod";
 import { findImportantDates } from "@/lib/important-dates";
 import type { Json } from "@/lib/supabase/database.types";
 import { createClient } from "@/lib/supabase/server";
+import { assertAccess, wishlistAccess } from "@/lib/wishlist-access";
 
 /** Four Brave queries (1 req/s), up to six page fetches, then one model call. */
 export const maxDuration = 120;
@@ -33,7 +34,6 @@ export async function POST(request: Request) {
     .from("shortlisted_courses")
     .select("*")
     .eq("id", parsed.data.id)
-    .eq("user_id", user.id)
     .maybeSingle();
 
   if (loadError) {
@@ -41,6 +41,10 @@ export async function POST(request: Request) {
   }
   if (!course) {
     return NextResponse.json({ error: "Course not found" }, { status: 404 });
+  }
+  const access = await wishlistAccess(supabase, course.user_id, user.id, user.email);
+  if (!assertAccess(access, "edit")) {
+    return NextResponse.json({ error: "You cannot refresh dates on this wishlist" }, { status: 403 });
   }
 
   try {
@@ -59,7 +63,6 @@ export async function POST(request: Request) {
         important_dates_checked_at: report.checkedAt,
       })
       .eq("id", course.id)
-      .eq("user_id", user.id)
       .select()
       .single();
 

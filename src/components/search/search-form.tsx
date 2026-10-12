@@ -57,8 +57,9 @@ export function SearchForm({
           Course Search Criteria
         </CardTitle>
         <CardDescription>
-          Fill in your preferences and candidate details. Each selected country is
-          searched independently, then results are combined.
+          Fill in your preferences and candidate details. Grades, subjects, qualification,
+          curriculum, and budget are all used, and each course is labelled Dream, Reach, or Target.
+          Each selected country is searched independently, then results are combined.
           {restoredAt
             ? ` Last search restored from ${new Date(restoredAt).toLocaleString()}.`
             : null}

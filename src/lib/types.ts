@@ -1,3 +1,7 @@
+import type { FitCategory } from "./candidate-fit";
+
+export type { FitCategory };
+
 export type CourseLevel =
   | "Diploma"
   | "Certificate"
@@ -70,6 +74,9 @@ export interface UniversityCourseResult {
   language: string;
   intakePeriod: string;
   scholarshipInfo: string;
+  /** How this course fits the candidate profile used for the search. */
+  fit?: FitCategory;
+  fitReason?: string;
 }
 
 export interface CourseSearchOutcome {
@@ -130,6 +137,9 @@ export interface ShortlistedCourse {
   intake_period: string | null;
   scholarship_info: string | null;
   notes: string | null;
+  fit: FitCategory | null;
+  fit_reason: string | null;
+  fit_source: "auto" | "manual" | null;
   is_manual: boolean;
   created_at: string;
   updated_at: string;
@@ -152,5 +162,38 @@ export interface ShortlistInsert {
   intake_period?: string;
   scholarship_info?: string;
   notes?: string;
+  fit?: FitCategory | null;
+  fit_reason?: string;
+  fit_source?: "auto" | "manual";
   is_manual?: boolean;
+}
+
+export interface ShortlistShare {
+  id: string;
+  owner_id: string;
+  owner_email: string;
+  invite_email: string;
+  permission: "read" | "comment" | "edit" | "delete";
+  created_at: string;
+}
+
+export interface ShortlistComment {
+  id: string;
+  course_id: string;
+  author_id: string;
+  author_email: string;
+  body: string;
+  created_at: string;
+}
+
+export interface ApplicationDocument {
+  id: string;
+  course_id: string;
+  label: string;
+  details: string | null;
+  required: boolean;
+  storage_path: string | null;
+  file_name: string | null;
+  uploaded_at: string | null;
+  created_at: string;
 }

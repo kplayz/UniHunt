@@ -68,13 +68,17 @@ export function SearchView({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Search failed");
-      if (data.warning) {
+      if (data.warning && (!Array.isArray(data.results) || data.results.length === 0)) {
         setSearchWarning(data.warning);
         toast.warning(data.warning);
         setResults([]);
         return;
       }
       setResults(data.results);
+      if (data.warning) {
+        setSearchWarning(data.warning);
+        toast.warning(data.warning);
+      }
       toast.success(`Found ${data.results.length} matching courses`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Search failed");
@@ -107,6 +111,9 @@ export function SearchView({
           language: course.language,
           intake_period: course.intakePeriod,
           scholarship_info: course.scholarshipInfo,
+          fit: course.fit,
+          fit_reason: course.fitReason,
+          fit_source: course.fit ? "auto" : undefined,
           is_manual: false,
         }),
       });
@@ -120,7 +127,7 @@ export function SearchView({
 
       setSavedKeys((prev) => new Set(prev).add(key));
       toast.success(
-        res.status === 409 ? "Already on your shortlist" : "Added to shortlist"
+        res.status === 409 ? "Already on your wishlist" : "Added to wishlist"
       );
     },
     [savedKeys]
@@ -144,6 +151,7 @@ export function SearchView({
         />
         <ResultsTable
           results={results}
+          criteria={criteria}
           shortlistedIds={shortlistedIds}
           onShortlist={handleShortlist}
           restored={Boolean(restoredAt && results.length > 0)}

@@ -49,6 +49,7 @@ import {
 interface ImportantDatesDialogProps {
   course: ShortlistedCourse;
   onLookup: (id: string) => Promise<void>;
+  canSearch?: boolean;
 }
 
 const CATEGORY_BADGE: Record<ImportantDateCategory, string> = {
@@ -115,61 +116,86 @@ interface AddToCalendarMenuProps {
 }
 
 /**
- * Google and Outlook deep links can only create one event at a time, so for a
- * single date they are offered directly; for several dates the .ics download
- * (which both services import) is the only multi-event option.
+ * Google and Outlook compose links can only create one event at a time.
+ * Several dates are exported as an .ics file, which both services import.
  */
 function AddToCalendarMenu({ events, filename, label, size = "sm", variant = "outline" }: AddToCalendarMenuProps) {
   if (events.length === 0) return null;
   const single = events.length === 1 ? events[0] : null;
 
-  function handleDownload() {
+  function handleIcs(provider: "google" | "outlook" | "file") {
     downloadIcs(filename, buildIcs(events));
+    if (provider === "google") {
+      openInNewTab("https://calendar.google.com/calendar/u/0/r/settings/export");
+      toast.success("Calendar file downloaded. In Google Calendar use Settings → Import to add all dates.");
+      return;
+    }
+    if (provider === "outlook") {
+      toast.success("Calendar file downloaded. Open it to add the dates to Outlook.");
+      return;
+    }
     toast.success(
       events.length === 1
         ? "Calendar file downloaded — open it to add the event"
-        : `Calendar file with ${events.length} dates downloaded — open it to import them`
+        : `Calendar file with ${events.length} dates downloaded`
     );
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button variant={variant} size={size} aria-label={label}>
           <CalendarPlus />
           {label}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-56">
+      <DropdownMenuContent align="end" className="z-[100] min-w-56">
         {single ? (
           <>
-            <DropdownMenuItem onSelect={() => openInNewTab(googleCalendarUrl(single))}>
-              Google Calendar
-              <ExternalLink className="ml-auto size-3 text-muted-foreground" />
+            <DropdownMenuItem asChild>
+              <a href={googleCalendarUrl(single)} target="_blank" rel="noopener noreferrer">
+                Google Calendar
+                <ExternalLink className="ml-auto size-3 text-muted-foreground" />
+              </a>
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => openInNewTab(outlookCalendarUrl(single, "live"))}>
-              Outlook.com
-              <ExternalLink className="ml-auto size-3 text-muted-foreground" />
+            <DropdownMenuItem asChild>
+              <a href={outlookCalendarUrl(single, "live")} target="_blank" rel="noopener noreferrer">
+                Outlook.com
+                <ExternalLink className="ml-auto size-3 text-muted-foreground" />
+              </a>
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => openInNewTab(outlookCalendarUrl(single, "office"))}>
-              Outlook (work or school)
-              <ExternalLink className="ml-auto size-3 text-muted-foreground" />
+            <DropdownMenuItem asChild>
+              <a href={outlookCalendarUrl(single, "office")} target="_blank" rel="noopener noreferrer">
+                Outlook (work or school)
+                <ExternalLink className="ml-auto size-3 text-muted-foreground" />
+              </a>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => handleIcs("file")}>
+              <Download className="size-4" />
+              Download .ics (Outlook desktop, Apple Calendar)
+            </DropdownMenuItem>
           </>
         ) : (
           <>
             <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-              {events.length} upcoming dates. Download the file, then import it into Google
-              Calendar or Outlook.
+              {events.length} upcoming dates — Google and Outlook import them from a calendar file.
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => handleIcs("google")}>
+              Google Calendar
+              <Download className="ml-auto size-3 text-muted-foreground" />
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => handleIcs("outlook")}>
+              Outlook
+              <Download className="ml-auto size-3 text-muted-foreground" />
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => handleIcs("file")}>
+              <Download className="size-4" />
+              Download .ics file
+            </DropdownMenuItem>
           </>
         )}
-        <DropdownMenuItem onSelect={handleDownload}>
-          <Download className="size-4" />
-          {single ? "Download .ics (Outlook desktop, Apple Calendar)" : "Download .ics file"}
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -236,7 +262,7 @@ function DateRow({ date, course }: { date: ImportantDate; course: ShortlistedCou
   );
 }
 
-export function ImportantDatesDialog({ course, onLookup }: ImportantDatesDialogProps) {
+export function ImportantDatesDialog({ course, onLookup, canSearch = true }: ImportantDatesDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const report = course.important_dates;
@@ -288,7 +314,7 @@ export function ImportantDatesDialog({ course, onLookup }: ImportantDatesDialogP
           </DialogDescription>
         </DialogHeader>
 
-        {!report && !loading && (
+        {!report && !loading && canSearch && (
           <div className="rounded-lg border border-dashed p-6 text-center">
             <CalendarSearch className="mx-auto mb-2 size-8 text-muted-foreground" />
             <p className="text-sm">
@@ -322,8 +348,9 @@ export function ImportantDatesDialog({ course, onLookup }: ImportantDatesDialogP
             {upcomingEvents.length > 0 && (
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
-                  {upcomingEvents.length} upcoming date{upcomingEvents.length === 1 ? "" : "s"}
-                  . Each is added as an all-day event with a reminder one week before.
+                  {upcomingEvents.length === 1
+                    ? "1 upcoming date. It is added as an all-day event with a reminder one week before."
+                    : `${upcomingEvents.length} upcoming dates. Each is added as an all-day event with a reminder one week before.`}
                 </p>
                 <AddToCalendarMenu
                   events={upcomingEvents}
@@ -376,6 +403,7 @@ export function ImportantDatesDialog({ course, onLookup }: ImportantDatesDialogP
           </div>
         )}
 
+        {canSearch && (
         <DialogFooter>
           <Button onClick={handleLookup} disabled={loading}>
             {loading ? (
@@ -388,6 +416,7 @@ export function ImportantDatesDialog({ course, onLookup }: ImportantDatesDialogP
             {loading ? "Searching…" : report ? "Search again" : "Search university website"}
           </Button>
         </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

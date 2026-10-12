@@ -103,7 +103,125 @@ const AGGREGATOR_HOSTS = new Set([
   "yocket.com",
   "youtube.com",
   "youtu.be",
+  "linkedin.com",
+  "facebook.com",
+  "instagram.com",
+  "medium.com",
+  "twitter.com",
+  "x.com",
+  "indiatimes.com",
+  "thehindu.com",
+  "indianexpress.com",
+  "ndtv.com",
+  "hindustantimes.com",
+  "byjus.com",
+  "unacademy.com",
+  "vedantu.com",
+  "embibe.com",
+  "aglasem.com",
+  "sarvgyan.com",
+  "targetstudy.com",
+  "nirfindia.org",
 ]);
+
+/** Academic public suffixes whose registrable host includes one label above the suffix. */
+const ACADEMIC_PUBLIC_SUFFIXES = new Set([
+  "ac.uk",
+  "ac.nz",
+  "ac.za",
+  "ac.jp",
+  "ac.kr",
+  "ac.th",
+  "ac.id",
+  "ac.ae",
+  "ac.at",
+  "ac.be",
+  "ac.il",
+  "ac.cy",
+  "edu.au",
+  "edu.sg",
+  "edu.hk",
+  "edu.my",
+  "edu.cn",
+  "edu.tw",
+  "edu.br",
+  "edu.mx",
+  "edu.ph",
+  "edu.pk",
+  "edu.ng",
+  "edu.eg",
+  "edu.sa",
+  "edu.tr",
+  "edu.vn",
+  "edu.ar",
+  "edu.co",
+  "edu.pl",
+  "edu.gh",
+  "ac.in",
+  "edu.in",
+  "res.in",
+  "ernet.in",
+  "co.in",
+  "gov.in",
+]);
+
+/** Regulator and listing sites that are not a single university. */
+const PORTAL_HOSTS = new Set([
+  "ugc.ac.in",
+  "aicte-india.org",
+  "education.gov.in",
+  "studyinindia.gov.in",
+  "scholarships.gov.in",
+  "india.gov.in",
+]);
+
+/**
+ * Official universities whose hostname does not contain "university" or an
+ * academic suffix (Toronto, ETH, TUM, and similar).
+ */
+const EXTRA_OFFICIAL_HOSTS = [
+  "ethz.ch",
+  "epfl.ch",
+  "tum.de",
+  "rwth-aachen.de",
+  "utoronto.ca",
+  "ubc.ca",
+  "mcgill.ca",
+  "uwaterloo.ca",
+  "umontreal.ca",
+  "queensu.ca",
+  "ualberta.ca",
+];
+
+const HOST_NAME_ALIASES: Array<{ host: string; pattern: RegExp }> = [
+  { host: "ox.ac.uk", pattern: /oxford/i },
+  { host: "cam.ac.uk", pattern: /cambridge/i },
+  { host: "mit.edu", pattern: /\bmit\b|massachusetts institute/i },
+  { host: "cmu.edu", pattern: /carnegie mellon|\bcmu\b/i },
+  { host: "gatech.edu", pattern: /georgia tech/i },
+  { host: "umich.edu", pattern: /\bmichigan\b/i },
+  { host: "illinois.edu", pattern: /\billinois\b/i },
+  { host: "berkeley.edu", pattern: /berkeley/i },
+  { host: "caltech.edu", pattern: /caltech|california institute of technology/i },
+  { host: "utoronto.ca", pattern: /\btoronto\b/i },
+  { host: "ubc.ca", pattern: /british columbia|\bubc\b/i },
+  { host: "mcgill.ca", pattern: /mcgill/i },
+  { host: "nus.edu.sg", pattern: /\bnus\b|national university of singapore/i },
+  { host: "ntu.edu.sg", pattern: /\bntu\b|nanyang/i },
+  { host: "ethz.ch", pattern: /\beth\b|zurich|zürich/i },
+  { host: "epfl.ch", pattern: /\bepfl\b|polytechnique/i },
+  { host: "tum.de", pattern: /\btum\b|technical university of munich|technische universität münchen/i },
+  { host: "sitpune.edu.in", pattern: /symbiosis/i },
+  { host: "siu.edu.in", pattern: /symbiosis/i },
+  { host: "du.ac.in", pattern: /university of delhi|delhi university|\bdu\b/i },
+  { host: "jnu.ac.in", pattern: /jawaharlal|\bjnu\b/i },
+  { host: "uohyd.ac.in", pattern: /hyderabad|\buohyd\b/i },
+  { host: "dtu.ac.in", pattern: /delhi technological|\bdtu\b/i },
+  { host: "nsut.ac.in", pattern: /netaji subhas|\bnsut\b/i },
+  { host: "annauniv.edu", pattern: /anna university|\banna\b/i },
+  { host: "jaduniv.edu.in", pattern: /jadavpur/i },
+  { host: "caluniv.ac.in", pattern: /calcutta|kolkata/i },
+];
 
 const STOPWORDS = new Set([
   "and",
@@ -247,15 +365,41 @@ export function registrableHost(url: string): string | null {
   const host = hostnameOf(url);
   if (!host) return null;
   const parts = host.split(".");
-  if (
-    parts.length >= 3 &&
-    parts[parts.length - 1] === "in" &&
-    ["ac", "edu", "gov", "co", "res", "ernet"].includes(parts[parts.length - 2])
-  ) {
-    return parts.slice(-3).join(".");
+  if (parts.length >= 3) {
+    const suffix = parts.slice(-2).join(".");
+    if (ACADEMIC_PUBLIC_SUFFIXES.has(suffix)) return parts.slice(-3).join(".");
   }
   if (parts.length >= 2) return parts.slice(-2).join(".");
   return host;
+}
+
+function hostMatches(host: string, suffix: string): boolean {
+  return host === suffix || host.endsWith(`.${suffix}`);
+}
+
+function isInstitutionHost(host: string): boolean {
+  if (host.endsWith(".edu") || host.includes(".edu.") || host.includes(".ac.")) return true;
+  if (EXTRA_OFFICIAL_HOSTS.some((suffix) => hostMatches(host, suffix))) return true;
+  if (/^uni-[a-z0-9-]+\.(de|nl|at|ch|fr)$/.test(host)) return true;
+  if (/^tu-[a-z0-9-]+\.(de|nl|at)$/.test(host)) return true;
+  const slug = host.split(".")[0] ?? "";
+  if (/^(best|top|my|all|find|study|list|ranking|compare|course|courses)/.test(slug)) {
+    return false;
+  }
+  return /university|universite|universidad|universitat|universität|vidyapeeth|polytechnic|hochschule/.test(
+    host
+  );
+}
+
+/** True when the URL is the university's own site, not a directory, news, or social page. */
+export function isOfficialUniversityUrl(url: string): boolean {
+  const host = hostnameOf(url);
+  if (!host || isAggregatorUrl(url)) return false;
+  if (PORTAL_HOSTS.has(host) || [...PORTAL_HOSTS].some((portal) => host.endsWith(`.${portal}`))) {
+    return false;
+  }
+  if (/news|blog|forum|wiki|ranking|portal/.test(host)) return false;
+  return isInstitutionHost(host);
 }
 
 export function isAggregatorUrl(url: string): boolean {
@@ -266,19 +410,6 @@ export function isAggregatorUrl(url: string): boolean {
     if (host.endsWith(`.${blocked}`)) return true;
   }
   return false;
-}
-
-function isOfficialLookingUrl(url: string): boolean {
-  const host = hostnameOf(url);
-  if (!host) return false;
-  return (
-    host.endsWith(".edu") ||
-    host.includes(".edu.") ||
-    host.includes(".ac.") ||
-    host.includes("university") ||
-    host.includes("uni-") ||
-    /\.uni\./.test(host)
-  );
 }
 
 export function normalizeSourceUrl(value: string): string {
@@ -301,6 +432,30 @@ function clipQuery(query: string): string {
   return collapsed.slice(0, QUERY_LIMIT).trim();
 }
 
+function officialSiteOperator(country: string): string {
+  switch (country.trim().toLowerCase()) {
+    case "india":
+      return "site:.ac.in OR site:.edu.in OR site:.edu";
+    case "united states":
+    case "united states of america":
+      return "site:.edu";
+    case "united kingdom":
+      return "site:.ac.uk";
+    case "australia":
+      return "site:.edu.au";
+    case "singapore":
+      return "site:.edu.sg";
+    case "canada":
+      return "university site:.ca";
+    case "germany":
+      return "universität site:.de";
+    case "china":
+      return "site:.edu.cn";
+    default:
+      return "site:.edu OR site:.ac.uk";
+  }
+}
+
 function subjectPhrase(criteria: SearchCriteriaInput): string {
   return (
     criteria.specialization.trim() ||
@@ -315,6 +470,12 @@ function buildSourceQueries(criteria: SearchCriteriaInput): Array<{
 }> {
   const { include, exclude } = braveLevelQueryParts(criteria.courseLevel);
   const subject = subjectPhrase(criteria);
+  const studied = criteria.subjects
+    .split(/[,;/]/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 2)
+    .slice(0, 2)
+    .join(" ");
   const country = criteria.countries.find(Boolean) ?? "";
   const countryCode = country ? braveCountryParam(country) : undefined;
   const queries: Array<{ query: string; country?: string }> = [
@@ -322,9 +483,25 @@ function buildSourceQueries(criteria: SearchCriteriaInput): Array<{
       query: clipQuery(
         [
           include || criteria.courseLevel.trim(),
-          subject,
+          `"${subject}"`,
           country,
-          "university course tuition admission",
+          "course",
+          officialSiteOperator(country),
+        ]
+          .filter(Boolean)
+          .join(" ")
+      ),
+      country: countryCode,
+    },
+    {
+      query: clipQuery(
+        [
+          include || criteria.courseLevel.trim(),
+          subject,
+          studied,
+          criteria.curriculum.trim(),
+          country,
+          "university course tuition admission requirements",
           exclude,
         ]
           .filter(Boolean)
@@ -567,9 +744,13 @@ function findOfficialNameInText(text: string): string | null {
 }
 
 function nameAgreesWithHost(official: string, url: string): boolean {
-  const hostSlug = (registrableHost(url)?.split(".")[0] ?? "").toLowerCase();
-  if (!hostSlug) return true;
-  const officialLower = official.toLowerCase();
+  const host = registrableHost(url);
+  const hostSlug = (host?.split(".")[0] ?? "").toLowerCase();
+  if (!hostSlug) return false;
+  const alias = HOST_NAME_ALIASES.find((item) => item.host === host);
+  if (alias?.pattern.test(official)) return true;
+  const withoutNotes = official.replace(/\([^)]*\)/g, " ");
+  const officialLower = withoutNotes.toLowerCase();
   const hostCompact = hostSlug.replace(/[-_]/g, "");
   const officialCompact = officialLower.replace(/[^a-z0-9]/g, "");
   if (
@@ -579,18 +760,19 @@ function nameAgreesWithHost(official: string, url: string): boolean {
   ) {
     return true;
   }
-  const initials = official
+  const initials = withoutNotes
     .split(/\s+/)
-    .filter((word) => !/^(of|and|the|&|for|university|institute|college)$/i.test(word))
+    .filter((word) => !/^(of|and|the|&|for|university|college)$/i.test(word))
     .map((word) => word[0] ?? "")
     .join("")
-    .toLowerCase();
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
   if (
-    initials &&
+    initials.length >= 3 &&
     (hostSlug === initials ||
       hostCompact === initials ||
       hostCompact.startsWith(initials) ||
-      initials.startsWith(hostCompact))
+      (hostCompact.length >= 3 && initials.startsWith(hostCompact)))
   ) {
     return true;
   }
@@ -598,7 +780,32 @@ function nameAgreesWithHost(official: string, url: string): boolean {
   if (hostParts.length > 1 && hostParts.every((part) => officialLower.includes(part))) {
     return true;
   }
-  return hostSlug.length > 4;
+  const nameTokens = officialLower
+    .split(/[^a-z0-9]+/)
+    .filter(
+      (token) =>
+        token.length > 3 &&
+        !/^(university|institute|college|technology|science|engineering|national|higher|education)$/.test(
+          token
+        )
+    );
+  return nameTokens.some((token) => hostCompact.includes(token));
+}
+
+/** The named institution is the one that publishes this official page. */
+export function universityOwnsUrl(universityName: string, url: string): boolean {
+  if (!universityName.trim() || !isOfficialUniversityUrl(url)) return false;
+  return nameAgreesWithHost(universityName, url);
+}
+
+export function retainOfficialCourses<
+  T extends { universityName: string; courseUrl: string },
+>(courses: T[]): T[] {
+  return courses.filter(
+    (course) =>
+      isOfficialUniversityUrl(course.courseUrl) &&
+      universityOwnsUrl(course.universityName, course.courseUrl)
+  );
 }
 
 export function universityNameFromSource(source: BraveWebResult): string {
@@ -623,14 +830,8 @@ export function universityNameFromSource(source: BraveWebResult): string {
   const named = titleParts.find(looksLikeUniversityName);
   if (named && nameAgreesWithHost(named, source.url)) return named;
 
-  if (fromHost) return fromHost;
-  if (fromText) return fromText;
-
-  const fallback = titleParts[titleParts.length - 1] ?? source.title;
-  if (isPromotionalUniversityName(fallback)) {
-    return fromHost || fallback;
-  }
-  return fallback;
+  if (fromHost && nameAgreesWithHost(fromHost, source.url)) return fromHost;
+  return fromHost;
 }
 
 export function courseNameFromSource(
@@ -670,7 +871,7 @@ export function courseNameFromSource(
 
 function sourceQuality(result: BraveWebResult, subject: string): number {
   let score = 0;
-  if (isOfficialLookingUrl(result.url)) score += 5;
+  if (isOfficialUniversityUrl(result.url)) score += 5;
   if (!isAggregatorUrl(result.url)) score += 2;
   const haystack = `${result.title} ${result.url} ${result.description}`;
   if (/course|program|programme|degree|study|tuition|admission/i.test(haystack)) {
@@ -722,9 +923,9 @@ export async function searchCourseSources(
   }
 
   const unique = dedupeSources(collected);
-  const preferred = unique.filter((result) => !isAggregatorUrl(result.url));
+  const official = unique.filter((result) => isOfficialUniversityUrl(result.url));
   const subject = subjectPhrase(criteria);
-  const ranked = (preferred.length >= 6 ? preferred : unique)
+  const ranked = official
     .slice()
     .sort((a, b) => sourceQuality(b, subject) - sourceQuality(a, subject));
   const diversified = diversifyByHost(ranked);
@@ -797,8 +998,7 @@ function matchScore(
     score += courseHits;
   }
 
-  if (isOfficialLookingUrl(source.url)) score += 3;
-  if (isAggregatorUrl(source.url)) score -= 6;
+  if (isOfficialUniversityUrl(source.url)) score += 3;
 
   return score;
 }
@@ -812,6 +1012,7 @@ function bestMatchingSource(
   let best: BraveWebResult | null = null;
   let bestScore = 0;
   for (const source of sources) {
+    if (!isOfficialUniversityUrl(source.url)) continue;
     const score = matchScore(source, universityName, courseName);
     if (score > bestScore) {
       best = source;
@@ -834,13 +1035,15 @@ export function resolveCourseUrl(
   );
   const proposed = safeHttpUrl(proposedUrl);
 
-  if (proposed) {
+  if (proposed && isOfficialUniversityUrl(proposed)) {
     const exact = allowed.get(normalizeSourceUrl(proposed));
-    if (exact && !isAggregatorUrl(exact.url)) return exact.url;
+    if (exact && isOfficialUniversityUrl(exact.url)) return exact.url;
 
     const host = hostnameOf(proposed);
-    const hostMatches = sources.filter((source) => hostnameOf(source.url) === host);
-    if (hostMatches.length === 1 && !isAggregatorUrl(hostMatches[0].url)) {
+    const hostMatches = sources.filter(
+      (source) => hostnameOf(source.url) === host && isOfficialUniversityUrl(source.url)
+    );
+    if (hostMatches.length === 1) {
       return hostMatches[0].url;
     }
     if (hostMatches.length > 1) {
@@ -864,8 +1067,8 @@ export async function lookupOfficialCourseUrl(
     )
   );
   const countryCode = country ? BRAVE_COUNTRY_CODES[country] : undefined;
-  const results = (await braveWebSearch(query, countryCode)).filter(
-    (result) => !isAggregatorUrl(result.url)
+  const results = (await braveWebSearch(query, countryCode)).filter((result) =>
+    isOfficialUniversityUrl(result.url)
   );
   return bestMatchingSource(universityName, courseName, results, 5)?.url ?? "";
 }

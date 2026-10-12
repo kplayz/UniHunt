@@ -10,6 +10,7 @@ import {
   searchCourseSources,
   universityNameFromSource,
   registrableHost,
+  retainOfficialCourses,
   isPromotionalUniversityName,
   nameFromRegistrableHost,
   courseNameFromSource,
@@ -23,6 +24,8 @@ import {
   enrichCourseResult,
   filterResultsByCourseLevel,
 } from "./course-match";
+import { classifyCourseFit, compareByCandidateProfile } from "./candidate-fit";
+import { crossValidateCourses } from "./cross-validate";
 import { compareRanking, compareSearchResults, specializationMatchScore } from "./ranking";
 import {
   majorUniversityScore,
@@ -66,7 +69,7 @@ function buildSearchPrompt(
   return `You extract university courses from search results.
 
 Return ONLY a JSON array. No markdown, no thinking, no explanation. Start with [ and end with ].
-Give 6-8 courses from DIFFERENT universities in this country. Use ONLY the Brave Search sources. Copy courseUrl exactly.
+Give 6-8 courses from DIFFERENT universities in this country. Use ONLY the official university websites in the sources. Copy courseUrl exactly from that university's own site.
 
 Candidate criteria:
 - Course Level: ${level}
@@ -85,10 +88,11 @@ Candidate criteria:
 HARD RULES:
 1. Prefer ${level} programmes. Include a university when its source is a ${level} / B.Tech / bachelor course page, even if that page also mentions PhD or master's options. Skip a result only when the course itself is clearly a master's, MBA, or PhD.
 2. Use a different nationally well-known university for each object. Prefer flagship institutions in the country (in India: IIT, NIT, BITS Pilani, VIT, Manipal, Symbiosis, IISc, IIIT). Do not fill the list with little-known private colleges. Include every major-university source that matches the specialization, even if it has no QS ranking.
-3. universityName: official institution name only (e.g. Amrita Vishwa Vidyapeetham, BITS Pilani). Never copy marketing headlines such as "Best … College in India". If the title is promotional, take the name from the URL host (amrita.edu → Amrita University) or a non-promotional name in the snippet.
+3. universityName must be the institution that owns courseUrl. Never output a different university that the page only mentions. Never copy marketing headlines such as "Best … College in India". If the title is promotional, take the name from the URL host (amrita.edu → Amrita University).
 4. universityLocation: copy the campus city from the source title/snippet only. Never invent a state or province. Do not assume Indian tech universities are in Karnataka. If the city is not in the source, use only the country.
 5. tuitionFee: prefer the annual fee for candidate type "${candidateType}". If that specific rate is not in the sources, still output whichever published tuition exists and label who it applies to, e.g. "INR 4.5 lakh/year for domestic students (international fee not listed)". Never output only "Contact university" when any fee appears in the sources.
 6. admissionRequirements: list each requirement separated by "; " so they can wrap onto multiple lines.
+7. Honour every candidate field above. Skip a course when the last qualification cannot enter that level (a school leaver cannot enter a master's or PhD). Prefer courses whose required subjects overlap the candidate's subjects. Prefer published tuition within the budget; if the only fee is far above the budget, still include the course only when it is a strong subject match and say so in tuitionFee. Use additional notes as extra constraints (scholarships, intake, language, campus).
 
 Each object in the JSON array MUST have exactly these fields:
 {
@@ -102,14 +106,14 @@ Each object in the JSON array MUST have exactly these fields:
   "qsWorldRanking": number or null,
   "tuitionFee": "annual fee with currency and which student type it applies to",
   "admissionRequirements": "requirement 1; requirement 2; requirement 3",
-  "courseUrl": "MUST be copied EXACTLY from a source URL below",
+  "courseUrl": "MUST be copied EXACTLY from an official university source URL below",
   "duration": "e.g. 4 years",
   "language": "e.g. English",
   "intakePeriod": "e.g. Fall 2026",
   "scholarshipInfo": "available scholarships or None"
 }
 
-Include every matching source university. Unranked universities that match the specialization must still appear. Prefer official university course/programme pages over ranking portals.
+Include every matching official university website. Skip ranking sites, news, blogs, and directories. Skip any university or course that is only mentioned on another website.
 
 Brave Search sources:
 ${formatSourcesForPrompt(sources)}`;
@@ -452,9 +456,11 @@ async function searchOneCountry(
   }
 
   const fromBrave = coursesFromBraveSources(sources, criteria, idPrefix);
-  const merged = applyUniversityNamesFromSources(
-    mergeCountryResults([extracted, fromBrave], criteria.specialization),
-    sources
+  const merged = retainOfficialCourses(
+    applyUniversityNamesFromSources(
+      mergeCountryResults([extracted, fromBrave], criteria.specialization),
+      sources
+    )
   );
   if (extracted.length > 0 && extracted.length < 5 && fromBrave.length > 0) {
     console.warn(
@@ -513,29 +519,45 @@ export async function searchUniversityCourses(
   );
   if (combined.length === 0) {
     throw new Error(
-      "No matching courses were found. Try different criteria or fewer countries."
+      "No courses were found on official university websites. Try a broader subject or a different country."
     );
   }
 
   const ranked = combined
     .slice()
-    .sort((a, b) => compareSearchResults(a, b, criteria.specialization));
+    .sort((a, b) => {
+      const profile = compareByCandidateProfile(a, b, criteria);
+      return profile !== 0 ? profile : compareSearchResults(a, b, criteria.specialization);
+    });
   const selected =
     ranked.length > MAX_COMBINED_RESULTS
       ? ranked.slice(0, MAX_COMBINED_RESULTS)
       : ranked;
 
   const withUrls = await fillMissingCourseUrls(selected);
-  const verified = withUrls.filter((result) => result.courseUrl);
-  const named = (verified.length >= 5 ? verified : withUrls).map((result) => {
-    if (!isPromotionalUniversityName(result.universityName)) return result;
-    const fromHost = nameFromRegistrableHost(result.courseUrl);
-    return fromHost ? { ...result, universityName: fromHost } : result;
+  const named = retainOfficialCourses(
+    withUrls.map((result) => {
+      if (!isPromotionalUniversityName(result.universityName)) return result;
+      const fromHost = nameFromRegistrableHost(result.courseUrl);
+      return fromHost ? { ...result, universityName: fromHost } : result;
+    })
+  );
+
+  const checked = await crossValidateCourses(named, criteria);
+  if (checked.results.length === 0) {
+    return { results: [], warning: checked.warning };
+  }
+
+  const fitted = checked.results.map((result) => {
+    const { fit, fitReason } = classifyCourseFit(result, criteria);
+    return { ...result, fit, fitReason };
   });
 
   return {
-    results: named.sort((a, b) =>
-      compareSearchResults(a, b, criteria.specialization)
-    ),
+    results: fitted.sort((a, b) => {
+      const profile = compareByCandidateProfile(a, b, criteria);
+      return profile !== 0 ? profile : compareSearchResults(a, b, criteria.specialization);
+    }),
+    warning: checked.warning,
   };
 }

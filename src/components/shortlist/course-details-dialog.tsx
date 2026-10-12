@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ExternalLink, NotebookPen } from "lucide-react";
 import { toast } from "sonner";
-import type { ShortlistedCourse } from "@/lib/types";
+import type { ShortlistComment, ShortlistedCourse } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,6 +20,8 @@ import {
 interface CourseDetailsDialogProps {
   course: ShortlistedCourse;
   onSaveNotes: (id: string, notes: string) => Promise<void>;
+  canEdit?: boolean;
+  canComment?: boolean;
 }
 
 function DetailRow({ label, value }: { label: string; value: string | null }) {
@@ -36,16 +38,49 @@ function DetailRow({ label, value }: { label: string; value: string | null }) {
 export function CourseDetailsDialog({
   course,
   onSaveNotes,
+  canEdit = true,
+  canComment = true,
 }: CourseDetailsDialogProps) {
   const [open, setOpen] = useState(false);
   const [notes, setNotes] = useState(course.notes ?? "");
   const [saving, setSaving] = useState(false);
+  const [comments, setComments] = useState<ShortlistComment[]>([]);
+  const [comment, setComment] = useState("");
+  const [commenting, setCommenting] = useState(false);
 
   // Reset on open rather than in an effect, so the textarea always reflects the
   // latest saved notes without triggering a cascading render.
   function handleOpenChange(next: boolean) {
-    if (next) setNotes(course.notes ?? "");
+    if (next) {
+      setNotes(course.notes ?? "");
+      void fetch(`/api/shortlist/comments?courseId=${course.id}`)
+        .then(async (res) => {
+          const data = await res.json();
+          if (res.ok) setComments(data.comments ?? []);
+        })
+        .catch(() => undefined);
+    }
     setOpen(next);
+  }
+
+  async function handleComment(event: React.FormEvent) {
+    event.preventDefault();
+    setCommenting(true);
+    try {
+      const res = await fetch("/api/shortlist/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ courseId: course.id, body: comment }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not add the comment");
+      setComments((current) => [...current, data.comment]);
+      setComment("");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not add the comment");
+    } finally {
+      setCommenting(false);
+    }
   }
 
   async function handleSave() {
@@ -96,6 +131,7 @@ export function CourseDetailsDialog({
           <DetailRow label="Intake" value={course.intake_period} />
           <DetailRow label="Scholarships" value={course.scholarship_info} />
           <DetailRow label="Requirements" value={course.admission_requirements} />
+          <DetailRow label="Why this fit" value={course.fit_reason} />
         </dl>
 
         {course.course_url && (
@@ -118,15 +154,50 @@ export function CourseDetailsDialog({
             onChange={(e) => setNotes(e.target.value)}
             rows={4}
             maxLength={2000}
+            disabled={!canEdit}
             placeholder="Deadlines, contacts, why this one appeals to you…"
           />
         </div>
 
-        <DialogFooter>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? "Saving..." : "Save notes"}
-          </Button>
-        </DialogFooter>
+        <div className="space-y-2">
+          <Label>Comments</Label>
+          <ul className="space-y-2">
+            {comments.map((item) => (
+              <li key={item.id} className="rounded-md bg-muted/50 p-2 text-sm">
+                <p className="text-xs text-muted-foreground">
+                  {item.author_email} · {new Date(item.created_at).toLocaleString()}
+                </p>
+                <p className="whitespace-pre-wrap break-words">{item.body}</p>
+              </li>
+            ))}
+            {comments.length === 0 && (
+              <li className="text-xs text-muted-foreground">No comments yet.</li>
+            )}
+          </ul>
+          {canComment && (
+            <form onSubmit={handleComment} className="space-y-2">
+              <Textarea
+                value={comment}
+                onChange={(event) => setComment(event.target.value)}
+                rows={2}
+                maxLength={2000}
+                placeholder="Leave a note for the applicant"
+                required
+              />
+              <Button type="submit" variant="secondary" disabled={commenting}>
+                {commenting ? "Posting…" : "Add comment"}
+              </Button>
+            </form>
+          )}
+        </div>
+
+        {canEdit && (
+          <DialogFooter>
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? "Saving..." : "Save notes"}
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

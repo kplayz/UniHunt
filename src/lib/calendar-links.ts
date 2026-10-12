@@ -53,13 +53,19 @@ function nextDay(iso: string): string {
   return next.toISOString().slice(0, 10);
 }
 
+/** Deep-link URLs have a practical length limit; keep the description short. */
+function urlSafeDescription(text: string, max = 800): string {
+  const compact = text.replace(/\n{3,}/g, "\n\n").trim();
+  return compact.length <= max ? compact : `${compact.slice(0, max - 1)}…`;
+}
+
 /** Google Calendar "create event" link (all-day: end date is exclusive). */
 export function googleCalendarUrl(event: CalendarEvent): string {
   const params = new URLSearchParams({
     action: "TEMPLATE",
     text: event.title,
     dates: `${compactDate(event.date)}/${compactDate(nextDay(event.date))}`,
-    details: event.description,
+    details: urlSafeDescription(event.description),
   });
   if (event.location) params.set("location", event.location);
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
@@ -79,7 +85,7 @@ export function outlookCalendarUrl(event: CalendarEvent, flavour: OutlookFlavour
     startdt: event.date,
     enddt: nextDay(event.date),
     allday: "true",
-    body: event.description,
+    body: urlSafeDescription(event.description),
   });
   if (event.location) params.set("location", event.location);
   const host = flavour === "office" ? "outlook.office.com" : "outlook.live.com";

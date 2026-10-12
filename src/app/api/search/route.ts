@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     const criteria = parsed.data;
     const { results, warning } = await searchUniversityCourses(criteria);
 
-    if (!warning && results.length > 0) {
+    if (results.length > 0) {
       await supabase.from("search_sessions").insert({
         user_id: user.id,
         criteria: criteria as Json,
